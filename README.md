@@ -1,9 +1,10 @@
-# HRIS APIC — Fase 1 (Lokal, Docker)
+# HRIS APIC — Fase 1 & 2 (Lokal, Docker)
 
-Implementasi Fase 1 dari PRD "Sistem HR & Kepegawaian" v2.1: fondasi (autentikasi,
-RBAC, data pegawai, master data) dan modul absensi (termasuk sub-fitur 5.3.1 Import
-Absensi via Excel). Lihat `/Users/abdisudiatmika/.claude/plans/melodic-cuddling-goose.md`
-untuk rencana lengkap fase ini, atau dokumen PRD untuk gambaran seluruh sistem.
+Implementasi Fase 1 (fondasi: autentikasi, RBAC, data pegawai, master data, absensi +
+5.3.1 Import Excel) dan Fase 2 (Cuti & Bon Cuti: 5.5–5.8) dari PRD "Sistem HR &
+Kepegawaian" v2.1. Lihat `/Users/abdisudiatmika/.claude/plans/melodic-cuddling-goose.md`
+untuk rencana lengkap fase yang sedang berjalan, atau dokumen PRD untuk gambaran
+seluruh sistem.
 
 ## Menjalankan secara lokal
 
@@ -50,9 +51,29 @@ pernah disalin ke dalam repo atau database ini.
 - Dashboard HR dengan angka nyata dari database
 - Audit log otomatis (`spatie/laravel-activitylog`) untuk semua model di atas
 
-Belum dikerjakan (fase berikutnya, sesuai rencana): Koreksi Absensi (5.4), Pengajuan
-Cuti/Sisa Cuti/Bon Cuti/Kalender Cuti (5.5–5.8), Surat Tugas/Perjalanan Dinas (5.10),
-Notifikasi (11), Laporan lanjutan (12).
+## Yang sudah berfungsi di Fase 2
+
+- **Pengajuan Cuti** (menu "Cuti" di portal) — pegawai ajukan, sistem validasi saldo,
+  tanggal tumpang tindih, dan tanggal terbatas (blackout) sebelum tersimpan; approval
+  berjenjang Atasan → HR lewat tombol "Setujui"/"Tolak" langsung di tabel
+- **Sisa Cuti** — dihitung live oleh `App\Services\LeaveBalanceService`, tampil sebagai
+  widget di dashboard portal dan kolom di Saldo Cuti (admin)
+- **Bon Cuti** dengan **potongan otomatis** — saat HR menambah/menaikkan hak cuti
+  (Saldo Cuti di admin), bon cuti yang masih outstanding otomatis terpotong
+  (`App\Observers\LeaveBalanceObserver`), tercatat di riwayat penyesuaian saldo
+- **Kalender Cuti & Ketersediaan Tim** — tabel per tanggal berisi jumlah & nama pegawai
+  yang cuti, dengan ambang batas peringatan; versi admin (semua pegawai) dan versi
+  portal (tim atasan saja)
+- Tanggal Terbatas Cuti (blackout dates) — master data di admin, dicek otomatis saat
+  pegawai mengajukan cuti
+
+Belum dikerjakan (fase berikutnya, sesuai rencana): Koreksi Absensi (5.4), Surat
+Tugas/Perjalanan Dinas (5.10), Notifikasi (11), Laporan lanjutan (12).
+
+**Keterbatasan yang diketahui:** jumlah hari cuti dihitung sebagai hari kerja
+(Senin–Jumat) tanpa mengecualikan hari libur nasional/perusahaan, karena kalender hari
+libur (bagian dari PRD 5.9) belum dibangun — cuti yang melewati tanggal merah akan
+sedikit overcount untuk saat ini.
 
 ## Keamanan — status & item yang masih perlu dikerjakan
 
@@ -89,11 +110,13 @@ hris-apic/
     ├── app/
     │   ├── Filament/
     │   │   ├── Resources/          # panel admin
-    │   │   ├── Portal/Resources/   # panel portal (pegawai/atasan)
-    │   │   ├── Pages/               # halaman custom (mis. Import Absensi)
+    │   │   ├── Portal/              # panel portal (pegawai/atasan): Resources, Pages, Widgets
+    │   │   ├── Pages/               # halaman custom admin (Import Absensi, Kalender Cuti)
     │   │   └── Widgets/
     │   ├── Imports/                 # parser Excel (AttendanceExceptionStatSheetImport)
     │   ├── Jobs/                    # ProcessAttendanceImport (queued)
+    │   ├── Services/                 # LeaveBalanceService — mesin hitung saldo cuti
+    │   ├── Observers/                # LeaveBalanceObserver — potongan otomatis Bon Cuti
     │   ├── Models/
     │   └── Policies/
     └── database/

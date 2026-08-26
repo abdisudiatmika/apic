@@ -79,6 +79,21 @@ class Employee extends Model
         return $this->hasMany(AttendanceLog::class);
     }
 
+    public function leaveBalances(): HasMany
+    {
+        return $this->hasMany(LeaveBalance::class);
+    }
+
+    public function leaveRequests(): HasMany
+    {
+        return $this->hasMany(LeaveRequest::class);
+    }
+
+    public function leaveAdvances(): HasMany
+    {
+        return $this->hasMany(LeaveAdvance::class);
+    }
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()->logOnlyDirty()->logFillable();

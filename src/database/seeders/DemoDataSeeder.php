@@ -7,6 +7,11 @@ use App\Models\Branch;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\EmployeeSchedule;
+use App\Models\LeaveAdvance;
+use App\Models\LeaveBalance;
+use App\Models\LeaveBlackoutDate;
+use App\Models\LeaveRequest;
+use App\Models\LeaveType;
 use App\Models\Position;
 use App\Models\Shift;
 use App\Models\User;
@@ -134,5 +139,84 @@ class DemoDataSeeder extends Seeder
                 ]);
             }
         }
+
+        // --- Fase 2: Cuti & Bon Cuti ---------------------------------------------------
+        $leaveTypes = LeaveType::all();
+        $year = now()->year;
+
+        foreach ($allEmployees as $employee) {
+            foreach ($leaveTypes as $leaveType) {
+                LeaveBalance::create([
+                    'employee_id' => $employee->id,
+                    'leave_type_id' => $leaveType->id,
+                    'year' => $year,
+                    'entitled_days' => $leaveType->default_days_per_year,
+                    'carry_forward_days' => 0,
+                ]);
+            }
+        }
+
+        $cutiTahunan = $leaveTypes->firstWhere('code', 'TAHUNAN');
+        $subordinates = $allEmployees->where('supervisor_id', $atasanEmployee->id)->values();
+
+        // Menunggu approval atasan — supaya alur approval langsung terlihat begitu login demo.
+        LeaveRequest::create([
+            'employee_id' => $pegawaiEmployee->id,
+            'leave_type_id' => $cutiTahunan->id,
+            'start_date' => now()->addDays(5)->toDateString(),
+            'end_date' => now()->addDays(7)->toDateString(),
+            'days' => 3,
+            'reason' => 'Acara keluarga',
+            'status' => 'menunggu_atasan',
+        ]);
+
+        // Sudah disetujui atasan, menunggu HR.
+        if ($subordinates->isNotEmpty()) {
+            $req = LeaveRequest::create([
+                'employee_id' => $subordinates[0]->id,
+                'leave_type_id' => $cutiTahunan->id,
+                'start_date' => now()->addDays(10)->toDateString(),
+                'end_date' => now()->addDays(12)->toDateString(),
+                'days' => 3,
+                'reason' => 'Keperluan pribadi',
+                'status' => 'menunggu_atasan',
+            ]);
+            $req->approveByAtasan($atasanUser, 'Disetujui, tim masih cukup orang.');
+        }
+
+        // Riwayat cuti yang sudah selesai penuh (disetujui) — supaya "terpakai" di Sisa
+        // Cuti tidak selalu nol.
+        if ($subordinates->count() > 1) {
+            $req = LeaveRequest::create([
+                'employee_id' => $subordinates[1]->id,
+                'leave_type_id' => $cutiTahunan->id,
+                'start_date' => now()->subDays(20)->toDateString(),
+                'end_date' => now()->subDays(18)->toDateString(),
+                'days' => 3,
+                'reason' => 'Cuti tahunan',
+                'status' => 'menunggu_atasan',
+            ]);
+            $req->approveByAtasan($atasanUser, null);
+            $req->approveByHr($hrUser, null);
+        }
+
+        // Bon Cuti disetujui & outstanding — coba naikkan Saldo Cuti pegawai ini di
+        // /admin/leave-balances untuk melihat potongan otomatis (PRD 5.7) terjadi.
+        $advance = LeaveAdvance::create([
+            'employee_id' => $pegawaiEmployee->id,
+            'leave_type_id' => $cutiTahunan->id,
+            'days' => 2,
+            'reason' => 'Belum ada saldo, keperluan mendesak',
+            'status' => 'menunggu_atasan',
+        ]);
+        $advance->approveByAtasan($atasanUser, null);
+        $advance->approveByHr($hrUser, null);
+
+        // Tanggal terbatas cuti (PRD 5.8) — contoh: akhir tahun sibuk tutup buku.
+        LeaveBlackoutDate::create([
+            'date' => now()->endOfYear()->toDateString(),
+            'department_id' => null,
+            'reason' => 'Periode tutup buku akhir tahun',
+        ]);
     }
 }
