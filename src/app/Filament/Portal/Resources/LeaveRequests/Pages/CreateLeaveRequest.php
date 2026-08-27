@@ -67,4 +67,9 @@ class CreateLeaveRequest extends CreateRecord
 
         return $data;
     }
+
+    protected function afterCreate(): void
+    {
+        $this->record->submit();
+    }
 }

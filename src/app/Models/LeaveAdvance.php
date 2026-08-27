@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\NotifiesApprovers;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,7 +12,7 @@ use Spatie\Activitylog\Support\LogOptions;
 class LeaveAdvance extends Model
 {
     /** @use HasFactory<\Database\Factories\LeaveAdvanceFactory> */
-    use HasFactory, LogsActivity;
+    use HasFactory, LogsActivity, NotifiesApprovers;
 
     protected $fillable = [
         'employee_id',
@@ -65,6 +66,19 @@ class LeaveAdvance extends Model
         return in_array($this->status, ['menunggu_atasan', 'menunggu_hr'], true);
     }
 
+    public function notifiableEmployee(): Employee
+    {
+        return $this->employee;
+    }
+
+    public function submit(): void
+    {
+        $this->notifyAtasanOfSubmission(
+            'Pengajuan Bon Cuti baru',
+            "{$this->employee->name} mengajukan Bon Cuti {$this->leaveType->name} ({$this->days} hari)."
+        );
+    }
+
     public function approveByAtasan(User $user, ?string $note = null): void
     {
         $this->update([
@@ -73,6 +87,11 @@ class LeaveAdvance extends Model
             'atasan_note' => $note,
             'atasan_at' => now(),
         ]);
+
+        $this->notifyHrOfAtasanApproval(
+            'Bon Cuti menunggu persetujuan HR',
+            "Bon Cuti {$this->employee->name} ({$this->leaveType->name}, {$this->days} hari) sudah disetujui atasan."
+        );
     }
 
     public function rejectByAtasan(User $user, string $note): void
@@ -83,6 +102,11 @@ class LeaveAdvance extends Model
             'atasan_note' => $note,
             'atasan_at' => now(),
         ]);
+
+        $this->notifySubmitterOfDecision(
+            'Bon Cuti ditolak',
+            "Pengajuan Bon Cuti {$this->leaveType->name} Anda ditolak atasan: {$note}"
+        );
     }
 
     /**
@@ -99,6 +123,11 @@ class LeaveAdvance extends Model
             'hr_at' => now(),
             'outstanding_days' => $this->days,
         ]);
+
+        $this->notifySubmitterOfDecision(
+            'Bon Cuti disetujui',
+            "Pengajuan Bon Cuti {$this->leaveType->name} Anda ({$this->days} hari) telah disetujui."
+        );
     }
 
     public function rejectByHr(User $user, string $note): void
@@ -109,6 +138,11 @@ class LeaveAdvance extends Model
             'hr_note' => $note,
             'hr_at' => now(),
         ]);
+
+        $this->notifySubmitterOfDecision(
+            'Bon Cuti ditolak',
+            "Pengajuan Bon Cuti {$this->leaveType->name} Anda ditolak HR: {$note}"
+        );
     }
 
     public function getActivitylogOptions(): LogOptions

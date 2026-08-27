@@ -1,10 +1,11 @@
-# HRIS APIC — Fase 1 & 2 (Lokal, Docker)
+# HRIS APIC — Fase 1, 2 & 3 (Lokal, Docker)
 
 Implementasi Fase 1 (fondasi: autentikasi, RBAC, data pegawai, master data, absensi +
-5.3.1 Import Excel) dan Fase 2 (Cuti & Bon Cuti: 5.5–5.8) dari PRD "Sistem HR &
-Kepegawaian" v2.1. Lihat `/Users/abdisudiatmika/.claude/plans/melodic-cuddling-goose.md`
-untuk rencana lengkap fase yang sedang berjalan, atau dokumen PRD untuk gambaran
-seluruh sistem.
+5.3.1 Import Excel), Fase 2 (Cuti & Bon Cuti: 5.5–5.8), dan Fase 3 (Koreksi Absensi 5.4,
+Surat Tugas/Perjalanan Dinas 5.10, Notifikasi 11) dari PRD "Sistem HR & Kepegawaian"
+v2.1. Lihat `/Users/abdisudiatmika/.claude/plans/melodic-cuddling-goose.md` untuk
+rencana lengkap fase yang sedang berjalan, atau dokumen PRD untuk gambaran seluruh
+sistem.
 
 ## Menjalankan secara lokal
 
@@ -67,13 +68,40 @@ pernah disalin ke dalam repo atau database ini.
 - Tanggal Terbatas Cuti (blackout dates) — master data di admin, dicek otomatis saat
   pegawai mengajukan cuti
 
-Belum dikerjakan (fase berikutnya, sesuai rencana): Koreksi Absensi (5.4), Surat
-Tugas/Perjalanan Dinas (5.10), Notifikasi (11), Laporan lanjutan (12).
-
 **Keterbatasan yang diketahui:** jumlah hari cuti dihitung sebagai hari kerja
 (Senin–Jumat) tanpa mengecualikan hari libur nasional/perusahaan, karena kalender hari
 libur (bagian dari PRD 5.9) belum dibangun — cuti yang melewati tanggal merah akan
 sedikit overcount untuk saat ini.
+
+## Yang sudah berfungsi di Fase 3
+
+- **Koreksi Absensi** (menu "Koreksi Absensi") — pegawai ajukan jam masuk/keluar
+  seharusnya, approval Atasan → HR; saat disetujui, `AttendanceLog` diperbarui
+  (`updateOrCreate`) dan riwayat sebelum/sesudah otomatis tercatat lewat
+  `activity_log` yang sudah ada sejak Fase 1 (tidak perlu tabel riwayat terpisah)
+- **Surat Tugas / Perjalanan Dinas** (menu "Surat Tugas") — pegawai ajukan untuk
+  beberapa pegawai sekaligus (relasi many-to-many), approval Atasan → HR; saat HR
+  menyetujui: nomor surat diterbitkan otomatis (`{urut}/ST-APIC/{bulan-romawi}/{tahun}`),
+  PDF bisa diunduh (`barryvdh/laravel-dompdf`, lihat `resources/views/pdf/`), dan
+  `AttendanceLog` setiap pegawai yang ditugaskan otomatis berstatus **dinas** untuk
+  seluruh tanggal perjalanan (tidak tercatat "Tidak Hadir") — tanpa menimpa data
+  kehadiran nyata bila ternyata mereka tetap check-in
+- **Notifikasi persisten** (ikon lonceng, bukan cuma toast) — `App\Concerns\NotifiesApprovers`
+  dipasang di keempat alur approval (Cuti, Bon Cuti, Koreksi Absensi, Surat Tugas):
+  atasan dinotifikasi saat ada pengajuan baru, HR dinotifikasi saat atasan sudah
+  menyetujui, pemohon dinotifikasi saat keputusan akhir keluar
+- **Pengingat terjadwal** — `contract-reminders:send` (kontrak berakhir dalam 30 hari)
+  dan `attendance-reminders:send` (pegawai berjadwal tanpa data absensi), didaftarkan
+  di `routes/console.php`, jalan otomatis lewat container `scheduler`
+- Dashboard HR menambah stat "Kontrak Segera Berakhir"
+
+Belum dikerjakan (fase berikutnya, sesuai rencana): Laporan & Analitik lanjutan (12),
+dan hardening keamanan sebelum produksi (lihat bagian Keamanan di bawah).
+
+**Keterbatasan yang diketahui (Fase 3):** format nomor surat, kop surat, dan pihak
+penandatangan pada PDF Surat Tugas bersifat placeholder generik — PRD 5.10 sendiri
+menandai ini perlu disesuaikan dengan SOP resmi perusahaan sebelum dipakai nyata.
+Notifikasi email/WhatsApp belum ada, baru notifikasi dalam aplikasi (bell icon).
 
 ## Keamanan — status & item yang masih perlu dikerjakan
 

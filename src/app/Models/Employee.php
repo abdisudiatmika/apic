@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
@@ -27,6 +28,7 @@ class Employee extends Model
         'user_id',
         'join_date',
         'employment_status',
+        'contract_end_date',
         'attendance_machine_id',
         'is_active',
     ];
@@ -35,6 +37,7 @@ class Employee extends Model
     {
         return [
             'join_date' => 'date',
+            'contract_end_date' => 'date',
             'is_active' => 'boolean',
         ];
     }
@@ -92,6 +95,21 @@ class Employee extends Model
     public function leaveAdvances(): HasMany
     {
         return $this->hasMany(LeaveAdvance::class);
+    }
+
+    public function attendanceCorrections(): HasMany
+    {
+        return $this->hasMany(AttendanceCorrection::class);
+    }
+
+    public function travelAssignmentRequests(): HasMany
+    {
+        return $this->hasMany(TravelAssignment::class, 'requested_by');
+    }
+
+    public function travelAssignments(): BelongsToMany
+    {
+        return $this->belongsToMany(TravelAssignment::class, 'travel_assignment_employees');
     }
 
     public function getActivitylogOptions(): LogOptions

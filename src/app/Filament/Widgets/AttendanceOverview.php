@@ -23,6 +23,11 @@ class AttendanceOverview extends StatsOverviewWidget
         $tidakHadir = $todayLogs->where('status', 'tidak_hadir')->count();
         $belumAdaData = $activeEmployees - $todayLogs->count();
 
+        $contractEndingSoon = Employee::where('is_active', true)
+            ->whereNotNull('contract_end_date')
+            ->whereBetween('contract_end_date', [$today->toDateString(), $today->copy()->addDays(30)->toDateString()])
+            ->count();
+
         return [
             Stat::make('Pegawai Aktif', $activeEmployees)
                 ->description('Total pegawai berstatus aktif')
@@ -38,6 +43,10 @@ class AttendanceOverview extends StatsOverviewWidget
             Stat::make('Tidak Hadir Hari Ini', $tidakHadir)
                 ->description($belumAdaData > 0 ? "{$belumAdaData} belum ada data absensi" : null)
                 ->color($tidakHadir > 0 ? 'danger' : 'gray'),
+
+            Stat::make('Kontrak Segera Berakhir', $contractEndingSoon)
+                ->description('Dalam 30 hari ke depan')
+                ->color($contractEndingSoon > 0 ? 'warning' : 'gray'),
         ];
     }
 }

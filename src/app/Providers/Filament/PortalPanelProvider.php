@@ -27,6 +27,7 @@ class PortalPanelProvider extends PanelProvider
             ->id('portal')
             ->path('portal')
             ->login()
+            ->databaseNotifications()
             ->colors([
                 'primary' => Color::Emerald,
             ])

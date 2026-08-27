@@ -37,4 +37,9 @@ class CreateLeaveAdvance extends CreateRecord
 
         return $data;
     }
+
+    protected function afterCreate(): void
+    {
+        $this->record->submit();
+    }
 }

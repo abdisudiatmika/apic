@@ -41,12 +41,14 @@ class AttendanceLogsTable
                         'hadir' => 'success',
                         'terlambat' => 'warning',
                         'tidak_hadir' => 'danger',
+                        'dinas' => 'info',
                         default => 'gray',
                     })
                     ->formatStateUsing(fn (string $state) => match ($state) {
                         'hadir' => 'Hadir',
                         'terlambat' => 'Terlambat',
                         'tidak_hadir' => 'Tidak Hadir',
+                        'dinas' => 'Dinas',
                         default => $state,
                     }),
             ])
@@ -56,6 +58,7 @@ class AttendanceLogsTable
                         'hadir' => 'Hadir',
                         'terlambat' => 'Terlambat',
                         'tidak_hadir' => 'Tidak Hadir',
+                        'dinas' => 'Dinas',
                     ]),
                 Filter::make('date')
                     ->schema([

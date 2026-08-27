@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\AttendanceCorrection;
 use App\Models\AttendanceLog;
 use App\Models\Branch;
 use App\Models\Department;
@@ -14,6 +15,7 @@ use App\Models\LeaveRequest;
 use App\Models\LeaveType;
 use App\Models\Position;
 use App\Models\Shift;
+use App\Models\TravelAssignment;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
@@ -218,5 +220,47 @@ class DemoDataSeeder extends Seeder
             'department_id' => null,
             'reason' => 'Periode tutup buku akhir tahun',
         ]);
+
+        // --- Fase 3: Koreksi Absensi, Surat Tugas, Notifikasi -------------------------
+
+        // Koreksi Absensi menunggu atasan — tanggal di luar rentang absensi yang sudah
+        // di-seed (0-4 hari lalu) supaya "Data Absensi Saat Ini" tampil kosong.
+        $correction = AttendanceCorrection::create([
+            'employee_id' => $pegawaiEmployee->id,
+            'date' => now()->subDays(6)->toDateString(),
+            'requested_check_in' => '08:05',
+            'requested_check_out' => '17:10',
+            'reason' => 'Lupa scan, mesin absensi sedang gangguan',
+            'status' => 'menunggu_atasan',
+        ]);
+        $correction->submit();
+
+        // Surat Tugas sudah disetujui atasan, menunggu HR — supaya HR bisa langsung
+        // coba "Setujui & Terbitkan" + unduh PDF begitu login demo.
+        $travelAssignees = $subordinates->count() > 2
+            ? collect([$pegawaiEmployee, $subordinates[2]])
+            : collect([$pegawaiEmployee]);
+
+        $travel = TravelAssignment::create([
+            'requested_by' => $pegawaiEmployee->id,
+            'type' => 'surat_tugas',
+            'destination' => 'Jakarta',
+            'start_date' => now()->addDays(14)->toDateString(),
+            'end_date' => now()->addDays(16)->toDateString(),
+            'purpose' => 'Menghadiri pelatihan HRIS nasional',
+            'transportation' => 'Pesawat',
+            'estimated_cost' => 3500000,
+            'status' => 'menunggu_atasan',
+        ]);
+        $travel->employees()->sync($travelAssignees->pluck('id'));
+        $travel->submit();
+        $travel->approveByAtasan($atasanUser, 'Disetujui, agenda penting.');
+
+        // Kontrak beberapa pegawai kontrak sintetis segera berakhir — supaya widget
+        // Dashboard & `contract-reminders:send` langsung ada yang bisa diuji tanpa
+        // menunggu scheduler asli.
+        $others->where('employment_status', 'kontrak')->take(3)->each(
+            fn (Employee $e, int $i) => $e->update(['contract_end_date' => now()->addDays(10 + $i * 5)])
+        );
     }
 }

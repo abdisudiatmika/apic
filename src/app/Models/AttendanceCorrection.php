@@ -6,22 +6,21 @@ use App\Concerns\NotifiesApprovers;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
 
-class LeaveRequest extends Model
+class AttendanceCorrection extends Model
 {
-    /** @use HasFactory<\Database\Factories\LeaveRequestFactory> */
+    /** @use HasFactory<\Database\Factories\AttendanceCorrectionFactory> */
     use HasFactory, LogsActivity, NotifiesApprovers;
 
     protected $fillable = [
         'employee_id',
-        'leave_type_id',
-        'start_date',
-        'end_date',
-        'days',
+        'date',
+        'requested_check_in',
+        'requested_check_out',
         'reason',
-        'replacement_employee_id',
         'attachment_path',
         'status',
         'atasan_id',
@@ -37,9 +36,7 @@ class LeaveRequest extends Model
     protected function casts(): array
     {
         return [
-            'start_date' => 'date',
-            'end_date' => 'date',
-            'days' => 'decimal:1',
+            'date' => 'date',
             'atasan_at' => 'datetime',
             'hr_at' => 'datetime',
             'cancelled_at' => 'datetime',
@@ -49,16 +46,6 @@ class LeaveRequest extends Model
     public function employee(): BelongsTo
     {
         return $this->belongsTo(Employee::class);
-    }
-
-    public function leaveType(): BelongsTo
-    {
-        return $this->belongsTo(LeaveType::class);
-    }
-
-    public function replacementEmployee(): BelongsTo
-    {
-        return $this->belongsTo(Employee::class, 'replacement_employee_id');
     }
 
     public function atasan(): BelongsTo
@@ -71,25 +58,21 @@ class LeaveRequest extends Model
         return $this->belongsTo(User::class, 'hr_id');
     }
 
-    /**
-     * Displayed as a single "Menunggu" badge in the UI — see the plan's note on
-     * simplifying the 5 internal statuses down to the PRD's 4-label vocabulary.
-     */
-    public function isPending(): bool
-    {
-        return in_array($this->status, ['menunggu_atasan', 'menunggu_hr'], true);
-    }
-
     public function notifiableEmployee(): Employee
     {
         return $this->employee;
     }
 
+    public function isPending(): bool
+    {
+        return in_array($this->status, ['menunggu_atasan', 'menunggu_hr'], true);
+    }
+
     public function submit(): void
     {
         $this->notifyAtasanOfSubmission(
-            'Pengajuan Cuti baru',
-            "{$this->employee->name} mengajukan {$this->leaveType->name} ({$this->days} hari)."
+            'Pengajuan Koreksi Absensi baru',
+            "{$this->employee->name} mengajukan koreksi absensi tanggal {$this->date->translatedFormat('d F Y')}."
         );
     }
 
@@ -103,8 +86,8 @@ class LeaveRequest extends Model
         ]);
 
         $this->notifyHrOfAtasanApproval(
-            'Cuti menunggu persetujuan HR',
-            "Cuti {$this->employee->name} ({$this->leaveType->name}, {$this->days} hari) sudah disetujui atasan."
+            'Koreksi Absensi menunggu persetujuan HR',
+            "Koreksi absensi {$this->employee->name} ({$this->date->translatedFormat('d F Y')}) sudah disetujui atasan."
         );
     }
 
@@ -118,11 +101,17 @@ class LeaveRequest extends Model
         ]);
 
         $this->notifySubmitterOfDecision(
-            'Pengajuan Cuti ditolak',
-            "Pengajuan {$this->leaveType->name} Anda ditolak atasan: {$note}"
+            'Koreksi Absensi ditolak',
+            "Pengajuan koreksi absensi Anda tanggal {$this->date->translatedFormat('d F Y')} ditolak atasan: {$note}"
         );
     }
 
+    /**
+     * Applies the requested times to attendance_logs. late_minutes is recomputed
+     * against the employee's shift for that date if one was scheduled — mirrors
+     * the same logic used by the Excel import in Fase 1, just derived from a
+     * schedule instead of trusting a source file's own late-minutes column.
+     */
     public function approveByHr(User $user, ?string $note = null): void
     {
         $this->update([
@@ -132,9 +121,39 @@ class LeaveRequest extends Model
             'hr_at' => now(),
         ]);
 
+        $lateMinutes = 0;
+        $schedule = $this->employee->schedules()->where('date', $this->date->toDateString())->first();
+
+        if ($schedule && $this->requested_check_in) {
+            $shift = $schedule->shift;
+            $scheduledStart = Carbon::parse($shift->start_time)->addMinutes($shift->tolerance_minutes);
+            $actualStart = Carbon::parse($this->requested_check_in);
+
+            if ($actualStart->gt($scheduledStart)) {
+                $lateMinutes = $scheduledStart->diffInMinutes($actualStart);
+            }
+        }
+
+        $status = match (true) {
+            $this->requested_check_in === null && $this->requested_check_out === null => 'tidak_hadir',
+            $lateMinutes > 0 => 'terlambat',
+            default => 'hadir',
+        };
+
+        AttendanceLog::updateOrCreate(
+            ['employee_id' => $this->employee_id, 'date' => $this->date->toDateString()],
+            [
+                'check_in' => $this->requested_check_in,
+                'check_out' => $this->requested_check_out,
+                'late_minutes' => $lateMinutes,
+                'status' => $status,
+                'source' => 'manual_correction',
+            ]
+        );
+
         $this->notifySubmitterOfDecision(
-            'Pengajuan Cuti disetujui',
-            "Pengajuan {$this->leaveType->name} Anda ({$this->days} hari) telah disetujui."
+            'Koreksi Absensi disetujui',
+            "Koreksi absensi Anda tanggal {$this->date->translatedFormat('d F Y')} telah disetujui dan data absensi diperbarui."
         );
     }
 
@@ -148,8 +167,8 @@ class LeaveRequest extends Model
         ]);
 
         $this->notifySubmitterOfDecision(
-            'Pengajuan Cuti ditolak',
-            "Pengajuan {$this->leaveType->name} Anda ditolak HR: {$note}"
+            'Koreksi Absensi ditolak',
+            "Pengajuan koreksi absensi Anda tanggal {$this->date->translatedFormat('d F Y')} ditolak HR: {$note}"
         );
     }
 
