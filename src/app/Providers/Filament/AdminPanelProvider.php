@@ -2,6 +2,8 @@
 
 namespace App\Providers\Filament;
 
+use App\Support\LocalInitialsAvatarProvider;
+use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -28,7 +30,16 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            // Filament's default UiAvatarsProvider sends every user's name to
+            // ui-avatars.com and is blocked by our img-src CSP anyway — this
+            // renders the same style of avatar locally instead.
+            ->defaultAvatarProvider(LocalInitialsAvatarProvider::class)
             ->databaseNotifications()
+            // Wajib untuk semua akun di panel ini — hanya HR/Administrator/Direksi
+            // yang punya akses ke /admin, jadi ini persis 3 role yang perlu 2FA.
+            ->multiFactorAuthentication([
+                AppAuthentication::make()->recoverable(),
+            ], isRequired: true)
             ->colors([
                 'primary' => Color::Indigo,
             ])

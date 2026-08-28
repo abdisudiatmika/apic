@@ -1,4 +1,4 @@
-# HRIS APIC — Fase 1, 2 & 3 (Lokal, Docker)
+# HRIS APIC — Fase 1–4 (Lokal, Docker)
 
 Implementasi Fase 1 (fondasi: autentikasi, RBAC, data pegawai, master data, absensi +
 5.3.1 Import Excel), Fase 2 (Cuti & Bon Cuti: 5.5–5.8), dan Fase 3 (Koreksi Absensi 5.4,
@@ -95,8 +95,9 @@ sedikit overcount untuk saat ini.
   di `routes/console.php`, jalan otomatis lewat container `scheduler`
 - Dashboard HR menambah stat "Kontrak Segera Berakhir"
 
-Belum dikerjakan (fase berikutnya, sesuai rencana): Laporan & Analitik lanjutan (12),
-dan hardening keamanan sebelum produksi (lihat bagian Keamanan di bawah).
+Hardening keamanan (Fase 4) sudah selesai — lihat bagian Keamanan di bawah. Belum
+dikerjakan: Laporan & Analitik lanjutan (12), satu-satunya modul inti PRD v2.1 yang
+masih tersisa.
 
 **Keterbatasan yang diketahui (Fase 3):** format nomor surat, kop surat, dan pihak
 penandatangan pada PDF Surat Tugas bersifat placeholder generik — PRD 5.10 sendiri
@@ -116,23 +117,67 @@ Sudah dikerjakan sejak awal (lihat plan untuk detail lengkap):
   bukan sinkron di request, supaya upload besar/berulang tidak membebani server
 - Audit log aktif dari awal untuk semua model utama
 
-**Belum dikerjakan — jangan deploy ke produksi sebelum ini selesai:**
-- 2FA untuk role HR/Administrator/Direksi
-- Security headers lengkap (CSP, HSTS) — baru relevan penuh setelah pakai domain + HTTPS
-- `composer audit` rutin sebagai bagian dari proses deploy
-- Strategi backup & rotasi database
-- `docker-compose.prod.yml` terpisah (compose saat ini untuk dev: Mailpit, port MySQL
-  ke host, dll — semuanya perlu ditinjau ulang sebelum dipindah ke mini PC)
+**Selesai di Fase 4 (hardening) — diuji end-to-end lewat browser, bukan cuma ditulis:**
+- 2FA (TOTP) wajib untuk panel admin (HR/Administrator/Direksi) — `AppAuthentication`
+  bawaan Filament, secret & recovery codes tersimpan terenkripsi di kolom
+  `users.app_authentication_secret`/`app_authentication_recovery_codes`
+  (cast `encrypted`/`encrypted:array`, bukan plaintext). Diuji: enrollment penuh
+  (scan secret → hitung OTP → aktifkan), lalu re-login memang meminta kode.
+- Security headers lengkap: X-Frame-Options, X-Content-Type-Options,
+  Referrer-Policy, Permissions-Policy, dan **Content-Security-Policy** di
+  `docker/nginx/default.conf`. `script-src` butuh `'unsafe-inline'` **dan**
+  `'unsafe-eval'` — Alpine.js (dasar semua komponen Livewire/Filament) meng-eval
+  ekspresi `x-data`/`x-bind` lewat `new Function()`, jadi `'unsafe-eval'` bukan
+  opsional (ditemukan lewat pengujian browser nyata: tanpa ini seluruh panel diam
+  tanpa reaksi apa pun, tanpa error yang terlihat di UI). Avatar bawaan Filament
+  (`UiAvatarsProvider`) diganti `App\Support\LocalInitialsAvatarProvider` —
+  provider asli mengirim nama pengguna ke `ui-avatars.com` (kebocoran data
+  pegawai ke pihak ketiga) dan sekalian diblokir oleh CSP ini; versi lokal
+  merender avatar inisial sebagai SVG data URI, tanpa request keluar.
+- Rate limiting (`throttle:30,1`) di route non-Filament (unduh PDF Surat Tugas) —
+  diuji: request ke-31 dalam window yang sama mengembalikan 429.
+- Kebijakan kata sandi minimum (`Password::defaults()` di `AppServiceProvider`).
+- Validasi tipe file pada 3 field Lampiran (Koreksi Absensi, Cuti, Surat Tugas) —
+  diuji: `.php` ditolak validasi, `.pdf`/`.jpg` diterima.
+- `scripts/security-check.sh` — `composer audit` + `composer outdated` +
+  pengecekan `.env` tidak ter-commit, dijalankan manual sebelum tiap deploy
+  (belum ada CI di project ini).
+- `scripts/backup-database.sh` — dump terkompresi + retensi otomatis, **diuji
+  dengan restore sungguhan** ke database sementara (bukan cuma cek file ada).
+
+**Disiapkan di Fase 4, tinggal dijalankan saat sudah di mini PC (butuh domain +
+DNS publik, tidak bisa diuji penuh di lokal):**
+- `docker-compose.prod.yml` — overlay produksi: tanpa Mailpit (lewat Compose
+  profiles, `mailpit` hanya aktif saat `COMPOSE_PROFILES=dev` — **jangan** set
+  variabel ini di `.env` mini PC, atau Mailpit ikut jalan di produksi), MySQL &
+  nginx tidak diekspos ke host sama sekali, `restart: always`,
+  `docker/php/php.prod.ini` (opcache tanpa validate_timestamps), service `caddy`
+  sebagai reverse proxy + HTTPS otomatis (Let's Encrypt). Sudah divalidasi
+  sintaksnya lewat `docker compose -f docker-compose.yml -f docker-compose.prod.yml
+  config`, belum diaktifkan nyata karena butuh domain.
+- HSTS (`Strict-Transport-Security`) — sudah ada di
+  `docker/nginx/default.prod.conf`, sengaja dipisah dari `default.conf` karena
+  header ini di atas HTTP polos hanya diabaikan browser.
+- Cron backup asli (`scripts/backup-database.sh` via crontab mini PC, bukan
+  dijalankan manual seperti saat pengujian di sini).
 
 ## Struktur project
 
 ```
 hris-apic/
-├── docker-compose.yml       # 7 service: app, nginx, mysql, redis, queue, scheduler, mailpit
-├── Dockerfile                # image app (php-fpm), non-root
+├── docker-compose.yml         # 7 service (dev): app, nginx, mysql, redis, queue,
+│                               # scheduler, mailpit (mailpit hanya profile "dev")
+├── docker-compose.prod.yml    # overlay produksi: +caddy, -mailpit, restart:always
+├── Dockerfile                  # image app (php-fpm), non-root
 ├── docker/
-│   ├── nginx/default.conf
-│   └── php/php.ini
+│   ├── nginx/default.conf      # dev: security headers + CSP
+│   ├── nginx/default.prod.conf # prod: + HSTS
+│   ├── php/php.ini             # dev
+│   ├── php/php.prod.ini        # prod: opcache.validate_timestamps=0, cookie secure
+│   └── caddy/Caddyfile         # reverse proxy + HTTPS otomatis (butuh APP_DOMAIN)
+├── scripts/
+│   ├── security-check.sh       # composer audit + outdated + cek .env tak ter-commit
+│   └── backup-database.sh      # dump + kompres + retensi (RETENTION_DAYS)
 ├── .env                       # kredensial compose (root-level, git-ignored)
 └── src/                       # aplikasi Laravel
     ├── app/
@@ -169,4 +214,13 @@ docker compose exec app php artisan migrate:fresh --seed
 
 # jalankan test
 docker compose exec app php artisan test
+
+# cek keamanan (composer audit, dependency outdated, .env tak ter-commit)
+./scripts/security-check.sh
+
+# backup database (kompres + retensi 14 hari default)
+./scripts/backup-database.sh
+
+# validasi sintaks docker-compose.prod.yml (tidak menjalankan apa pun)
+APP_DOMAIN=hris.example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml config
 ```

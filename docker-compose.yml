@@ -95,6 +95,11 @@ services:
     image: axllent/mailpit
     container_name: hris_mailpit
     restart: unless-stopped
+    # Only started when the "dev" profile is active (root .env sets
+    # COMPOSE_PROFILES=dev, which Compose reads automatically) — so
+    # docker-compose.prod.yml, which never activates that profile, excludes it
+    # entirely instead of shipping a fake mail catcher to production.
+    profiles: [dev]
     ports:
       - "127.0.0.1:8025:8025"
     networks: [hris]

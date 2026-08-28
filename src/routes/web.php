@@ -8,5 +8,5 @@ Route::get('/', function () {
 });
 
 Route::get('/travel-assignments/{travelAssignment}/pdf', [TravelAssignmentPdfController::class, 'show'])
-    ->middleware('auth')
+    ->middleware(['auth', 'throttle:30,1'])
     ->name('travel-assignments.pdf');

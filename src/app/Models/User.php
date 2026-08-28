@@ -5,6 +5,8 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Models\Employee;
 use Database\Factories\UserFactory;
+use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication;
+use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthenticationRecovery;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -13,11 +15,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use SensitiveParameter;
 use Spatie\Permission\Traits\HasRoles;
 
 #[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable implements FilamentUser
+#[Hidden(['password', 'remember_token', 'app_authentication_secret', 'app_authentication_recovery_codes'])]
+class User extends Authenticatable implements FilamentUser, HasAppAuthentication, HasAppAuthenticationRecovery
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, HasRoles, Notifiable;
@@ -32,6 +35,10 @@ class User extends Authenticatable implements FilamentUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            // encrypted:* — the 2FA secret and recovery codes are useless to an
+            // attacker who only gets a database dump, not the app's APP_KEY too.
+            'app_authentication_secret' => 'encrypted',
+            'app_authentication_recovery_codes' => 'encrypted:array',
         ];
     }
 
@@ -51,5 +58,36 @@ class User extends Authenticatable implements FilamentUser
             'portal' => $this->hasAnyRole(['pegawai', 'atasan']),
             default => false,
         };
+    }
+
+    // --- Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication ---------------
+
+    public function getAppAuthenticationSecret(): ?string
+    {
+        return $this->app_authentication_secret;
+    }
+
+    public function saveAppAuthenticationSecret(#[SensitiveParameter] ?string $secret): void
+    {
+        $this->app_authentication_secret = $secret;
+        $this->save();
+    }
+
+    public function getAppAuthenticationHolderName(): string
+    {
+        return $this->email;
+    }
+
+    // --- Filament\Auth\MultiFactor\App\Contracts\HasAppAuthenticationRecovery -------
+
+    public function getAppAuthenticationRecoveryCodes(): ?array
+    {
+        return $this->app_authentication_recovery_codes;
+    }
+
+    public function saveAppAuthenticationRecoveryCodes(#[SensitiveParameter] ?array $codes): void
+    {
+        $this->app_authentication_recovery_codes = $codes;
+        $this->save();
     }
 }

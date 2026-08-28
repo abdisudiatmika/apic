@@ -1,6 +1,10 @@
 # Root-level compose env — contains real DB credentials, never commit.
 /.env
 
+# Database dumps produced by scripts/backup-database.sh — real data once this runs
+# against a production database, never belongs in git.
+/backups/
+
 # macOS
 .DS_Store
 

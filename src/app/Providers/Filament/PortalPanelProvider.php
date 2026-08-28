@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Support\LocalInitialsAvatarProvider;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -27,6 +28,7 @@ class PortalPanelProvider extends PanelProvider
             ->id('portal')
             ->path('portal')
             ->login()
+            ->defaultAvatarProvider(LocalInitialsAvatarProvider::class)
             ->databaseNotifications()
             ->colors([
                 'primary' => Color::Emerald,

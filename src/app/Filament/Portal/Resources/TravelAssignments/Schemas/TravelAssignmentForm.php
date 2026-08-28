@@ -60,6 +60,7 @@ class TravelAssignmentForm
                     ->disk('local')
                     ->directory('travel-assignment-attachments')
                     ->visibility('private')
+                    ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png'])
                     ->maxSize(5120)
                     ->columnSpanFull(),
             ]);

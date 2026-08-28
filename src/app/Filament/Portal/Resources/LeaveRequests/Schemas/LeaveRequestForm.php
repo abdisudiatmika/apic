@@ -47,6 +47,7 @@ class LeaveRequestForm
                     ->disk('local')
                     ->directory('leave-attachments')
                     ->visibility('private')
+                    ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png'])
                     ->maxSize(5120),
             ]);
     }
