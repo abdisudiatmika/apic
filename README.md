@@ -1,11 +1,12 @@
-# HRIS APIC — Fase 1–4 (Lokal, Docker)
+# HRIS APIC — Fase 1–5 (Lokal, Docker)
 
 Implementasi Fase 1 (fondasi: autentikasi, RBAC, data pegawai, master data, absensi +
-5.3.1 Import Excel), Fase 2 (Cuti & Bon Cuti: 5.5–5.8), dan Fase 3 (Koreksi Absensi 5.4,
-Surat Tugas/Perjalanan Dinas 5.10, Notifikasi 11) dari PRD "Sistem HR & Kepegawaian"
-v2.1. Lihat `/Users/abdisudiatmika/.claude/plans/melodic-cuddling-goose.md` untuk
-rencana lengkap fase yang sedang berjalan, atau dokumen PRD untuk gambaran seluruh
-sistem.
+5.3.1 Import Excel), Fase 2 (Cuti & Bon Cuti: 5.5–5.8), Fase 3 (Koreksi Absensi 5.4,
+Surat Tugas/Perjalanan Dinas 5.10, Notifikasi 11), Fase 4 (hardening keamanan), dan
+Fase 5 (Laporan & Analitik HR — fitur 12) dari PRD "Sistem HR & Kepegawaian" v2.1 —
+**seluruh modul inti PRD sudah selesai.** Lihat
+`/Users/abdisudiatmika/.claude/plans/melodic-cuddling-goose.md` untuk rencana lengkap
+tiap fase, atau dokumen PRD untuk gambaran seluruh sistem.
 
 ## Menjalankan secara lokal
 
@@ -95,14 +96,29 @@ sedikit overcount untuk saat ini.
   di `routes/console.php`, jalan otomatis lewat container `scheduler`
 - Dashboard HR menambah stat "Kontrak Segera Berakhir"
 
-Hardening keamanan (Fase 4) sudah selesai — lihat bagian Keamanan di bawah. Belum
-dikerjakan: Laporan & Analitik lanjutan (12), satu-satunya modul inti PRD v2.1 yang
-masih tersisa.
+Hardening keamanan (Fase 4) sudah selesai — lihat bagian Keamanan di bawah.
 
 **Keterbatasan yang diketahui (Fase 3):** format nomor surat, kop surat, dan pihak
 penandatangan pada PDF Surat Tugas bersifat placeholder generik — PRD 5.10 sendiri
 menandai ini perlu disesuaikan dengan SOP resmi perusahaan sebelum dipakai nyata.
 Notifikasi email/WhatsApp belum ada, baru notifikasi dalam aplikasi (bell icon).
+
+## Yang sudah berfungsi di Fase 5
+
+- **Laporan & Analitik HR** (menu "Laporan & Analitik", panel admin — HR/Administrator/
+  Direksi) — PRD 12: satu halaman dengan filter bersama (rentang tanggal, departemen,
+  cabang) menampilkan empat ringkasan per pegawai: Kehadiran & Keterlambatan, Cuti,
+  Bon Cuti, dan Perjalanan Dinas. Tiap ringkasan bisa diunduh sebagai Excel maupun PDF
+  (`app/Services/ReportService.php` — satu sumber angka yang sama dipakai baik oleh
+  tampilan layar maupun file yang diunduh, jadi keduanya selalu cocok).
+- **Grafik Tren Kehadiran** — melunasi "Grafik tren kehadiran" yang disebut di PRD 5.1
+  (Dashboard HR) tapi belum pernah dibangun di Fase 1; sekarang jadi widget chart di
+  halaman Laporan, dengan pilihan periode 7/14/30 hari sendiri.
+- Tidak ada laporan "Data Pegawai" terpisah — resource Data Pegawai (5.2) yang sudah
+  ada di Fase 1 sudah bisa difilter/dicari HR tanpa modul laporan baru; baris fitur 12
+  di PRD spesifik hanya menyebut kehadiran/keterlambatan/cuti/bon cuti/perjalanan dinas.
+
+Dengan Fase 5 selesai, **seluruh modul inti PRD v2.1 (fitur 1–13) sudah berfungsi.**
 
 ## Keamanan — status & item yang masih perlu dikerjakan
 
@@ -187,8 +203,9 @@ hris-apic/
     │   │   ├── Pages/               # halaman custom admin (Import Absensi, Kalender Cuti)
     │   │   └── Widgets/
     │   ├── Imports/                 # parser Excel (AttendanceExceptionStatSheetImport)
+    │   ├── Exports/                  # Excel laporan (AttendanceSummaryExport, dll — Fase 5)
     │   ├── Jobs/                    # ProcessAttendanceImport (queued)
-    │   ├── Services/                 # LeaveBalanceService — mesin hitung saldo cuti
+    │   ├── Services/                 # LeaveBalanceService, ReportService (Fase 5)
     │   ├── Observers/                # LeaveBalanceObserver — potongan otomatis Bon Cuti
     │   ├── Models/
     │   └── Policies/
