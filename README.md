@@ -8,6 +8,10 @@ Fase 5 (Laporan & Analitik HR — fitur 12) dari PRD "Sistem HR & Kepegawaian" v
 `/Users/abdisudiatmika/.claude/plans/melodic-cuddling-goose.md` untuk rencana lengkap
 tiap fase, atau dokumen PRD untuk gambaran seluruh sistem.
 
+Dokumen ini untuk **menjalankan secara lokal**. Untuk deploy ke server/mini PC
+sungguhan, lihat [`DEPLOY.md`](DEPLOY.md) — beda cukup banyak dari setup lokal
+(tanpa data demo, kredensial produksi, Cloudflare Tunnel, dll).
+
 ## Menjalankan secara lokal
 
 Prasyarat: Docker Desktop menyala.
