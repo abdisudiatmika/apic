@@ -1,0 +1,31 @@
+# Local-development overlay. docker-compose.yml on its own has no host port
+# exposure and no mail catcher — this file adds both back for local work.
+#
+# Kept as a separate file (not a `!reset`/merge trick in docker-compose.prod.yml)
+# because `!reset` needs Docker Compose v2.24+, and there is no way to guarantee
+# every machine this runs on — including whatever Compose version the mini PC
+# happens to have — meets that. A version this file depends on failing silently
+# would mean "not exposed to the host" quietly becomes false instead of erroring;
+# this dev/prod file split works identically on any Compose version instead.
+#
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+
+services:
+  nginx:
+    ports:
+      - "127.0.0.1:8080:80"
+
+  mysql:
+    ports:
+      # Host port 3307, not 3306: many dev machines already run a native MySQL on
+      # 3306. Containers still talk to each other over "mysql:3306" internally —
+      # this only affects connecting a local DB client from the host.
+      - "127.0.0.1:3307:3306"
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: hris_mailpit
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+    networks: [hris]

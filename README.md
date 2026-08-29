@@ -21,9 +21,17 @@ cp .env.example .env
 # edit .env: isi DB_PASSWORD & DB_ROOT_PASSWORD dengan password acak yang kuat
 # (jangan pakai nilai contoh apa adanya)
 
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 docker compose exec app php artisan migrate --seed
 ```
+
+`docker-compose.dev.yml` menambahkan Mailpit dan port host (8080 untuk nginx, 3307
+untuk MySQL) di atas `docker-compose.yml` — dipisah jadi file sendiri (bukan
+`docker-compose.prod.yml` yang dipakai untuk mini PC) supaya keduanya tidak
+bergantung pada fitur merge Compose yang butuh versi terbaru (lihat komentar di
+`docker-compose.prod.yml`). Semua perintah `docker compose ...` di bawah asumsikan
+dua file ini — ganti `docker compose` dengan
+`docker compose -f docker-compose.yml -f docker-compose.dev.yml` bila perlu.
 
 Akses:
 - Admin panel (HR/Administrator/Direksi): http://localhost:8080/admin
@@ -165,25 +173,33 @@ Sudah dikerjakan sejak awal (lihat plan untuk detail lengkap):
 - `scripts/backup-database.sh` — dump terkompresi + retensi otomatis, **diuji
   dengan restore sungguhan** ke database sementara (bukan cuma cek file ada).
 
-**Disiapkan di Fase 4, tinggal dijalankan saat sudah di mini PC (butuh tunnel
-Cloudflare aktif, tidak bisa diuji penuh di lokal):**
-- `docker-compose.prod.yml` — overlay produksi: tanpa Mailpit (lewat Compose
-  profiles, `mailpit` hanya aktif saat `COMPOSE_PROFILES=dev` — **jangan** set
-  variabel ini di `.env` mini PC, atau Mailpit ikut jalan di produksi), MySQL &
-  nginx tidak diekspos ke host sama sekali, `restart: always`,
-  `docker/php/php.prod.ini` (opcache tanpa validate_timestamps), service
-  `cloudflared` — Cloudflare Tunnel, dipilih karena mini PC sudah punya Cloudflare
-  & Tailscale terpasang: tidak perlu buka port di router/modem, HTTPS ditangani
-  penuh di edge Cloudflare, tinggal buat tunnel di dashboard Zero Trust (Networks →
-  Tunnels), arahkan Public Hostname ke `nginx:80`, dan isi token-nya ke
-  `CLOUDFLARE_TUNNEL_TOKEN` di `.env` — langkah lengkap ada sebagai komentar di
-  `docker-compose.prod.yml`. Sudah divalidasi sintaksnya lewat `docker compose -f
-  docker-compose.yml -f docker-compose.prod.yml config`, belum diaktifkan nyata
-  karena butuh tunnel token sungguhan.
+**Disiapkan di Fase 4, tinggal dijalankan saat sudah di mini PC (butuh route
+Cloudflare Tunnel aktif, tidak bisa diuji penuh di lokal):**
+- `docker-compose.prod.yml` — overlay produksi: tanpa Mailpit, MySQL tidak
+  diekspos ke host sama sekali, nginx hanya diekspos ke `127.0.0.1` (bukan
+  `0.0.0.0`) di port `HRIS_PORT` (default 8081), `restart: always`,
+  `docker/php/php.prod.ini` (opcache tanpa validate_timestamps). **Tidak ada
+  service `cloudflared` di file ini** — mini PC sudah punya connector Cloudflare
+  Tunnel aktif untuk aplikasi lain (nama contoh: "server-abdi"), jadi HRIS cukup
+  ditambahkan sebagai satu route baru ke tunnel yang sudah ada (Zero Trust
+  dashboard → tunnel yang sudah ada → Public Hostname → arahkan ke
+  `localhost:8081`), bukan bikin tunnel/token baru — langkah lengkap & catatan
+  soal cara koneksi tunnel yang sudah ada (systemd vs container Docker) ada
+  sebagai komentar di `docker-compose.prod.yml`. Sudah divalidasi sintaksnya
+  lewat `docker compose -f docker-compose.yml -f docker-compose.prod.yml
+  config`, belum diaktifkan nyata karena route belum ditambahkan di mini PC.
+- Sengaja **tidak memakai** fitur merge `!reset` Compose (butuh v2.24+) untuk
+  memisahkan port dev vs prod — versi Compose di mini PC belum tentu sebaru itu,
+  dan `!reset` yang gagal diam-diam (tanpa error) bisa membuat "MySQL tidak
+  diekspos ke host" diam-diam jadi salah lagi. Makanya port dev
+  (`docker-compose.dev.yml`) dan prod (`docker-compose.prod.yml`) dipisah jadi
+  file sendiri-sendiri di atas `docker-compose.yml` yang tanpa port sama sekali —
+  bekerja sama di versi Compose mana pun.
 - `bootstrap/app.php` menambahkan `trustProxies(at: '*')` — wajib supaya Laravel
-  tahu request yang masuk lewat cloudflared→nginx sebenarnya HTTPS (cookie secure,
-  generate URL `https://`), aman dipakai karena nginx sendiri tidak pernah
-  langsung diakses dari luar baik di lokal maupun produksi.
+  tahu request yang masuk lewat tunnel Cloudflare→nginx sebenarnya HTTPS (cookie
+  secure, generate URL `https://`), aman dipakai karena nginx sendiri tidak
+  pernah diakses langsung dari luar baik di lokal maupun produksi (hanya lewat
+  `127.0.0.1`).
 - HSTS (`Strict-Transport-Security`) — sudah ada di
   `docker/nginx/default.prod.conf`, sengaja dipisah dari `default.conf` karena
   header ini di atas HTTP polos hanya diabaikan browser.
@@ -194,9 +210,10 @@ Cloudflare aktif, tidak bisa diuji penuh di lokal):**
 
 ```
 hris-apic/
-├── docker-compose.yml         # 7 service (dev): app, nginx, mysql, redis, queue,
-│                               # scheduler, mailpit (mailpit hanya profile "dev")
-├── docker-compose.prod.yml    # overlay produksi: +cloudflared, -mailpit, restart:always
+├── docker-compose.yml         # 6 service inti: app, nginx, mysql, redis, queue,
+│                               # scheduler — tanpa port host, tanpa mailpit
+├── docker-compose.dev.yml     # overlay lokal: +port host (8080/3307/8025), +mailpit
+├── docker-compose.prod.yml    # overlay produksi: +port nginx 127.0.0.1 only, restart:always
 ├── Dockerfile                  # image app (php-fpm), non-root
 ├── docker/
 │   ├── nginx/default.conf      # dev: security headers + CSP
@@ -251,5 +268,5 @@ docker compose exec app php artisan test
 ./scripts/backup-database.sh
 
 # validasi sintaks docker-compose.prod.yml (tidak menjalankan apa pun)
-CLOUDFLARE_TUNNEL_TOKEN=dummy docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+docker compose -f docker-compose.yml -f docker-compose.prod.yml config
 ```

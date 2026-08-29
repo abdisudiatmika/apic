@@ -1,37 +1,49 @@
-# Production overlay for the mini PC deployment. Differences from docker-compose.yml:
-#   - no mailpit (use a real SMTP provider via src/.env)
-#   - mysql not exposed to the host at all (dev exposes 127.0.0.1:3307 for a local
-#     DB client; prod has no legitimate reason to reach it from outside the network)
-#   - nginx not exposed to the host either — cloudflared is the only entrypoint, and
-#     it doesn't even listen on a port: it makes an outbound-only connection to
-#     Cloudflare's edge, which terminates HTTPS and forwards to nginx over the
-#     internal Docker network. No port-forwarding on the router, no public IP needed.
+# Production overlay for the mini PC deployment. docker-compose.yml on its own
+# already has no host port exposure and no mail catcher (see docker-compose.dev.yml
+# for where those live for local work) — this file only needs to ADD what
+# production needs, never remove/reset anything the base file sets. That's
+# deliberate: the Compose `!reset` merge tag needs Compose v2.24+, and this file
+# also has to work correctly on whatever version the mini PC has — a version
+# mismatch there would silently fail to reset instead of erroring, which is exactly
+# how "MySQL not exposed to host" would quietly become false again.
+#
+# Differences from docker-compose.yml:
+#   - nginx exposed ONLY on 127.0.0.1 (loopback), not 0.0.0.0 — reachable from other
+#     processes on the same machine (the existing Cloudflare Tunnel connector), never
+#     from the LAN or internet directly
 #   - restart: always instead of unless-stopped (a mini PC should come back up on
 #     its own after a power loss with no human involved)
 #   - docker/php/php.prod.ini overlaid on top of the image's baked-in php.ini
 #   - docker/nginx/default.prod.conf (adds HSTS) instead of default.conf
 #
-# One-time setup before first run (Cloudflare Zero Trust dashboard, not this repo):
-#   1. Networks → Tunnels → Create a tunnel → "Cloudflared" connector type.
-#   2. Copy the install command's token (the long string after "--token") into
-#      CLOUDFLARE_TUNNEL_TOKEN in the root .env — that's the only credential needed,
-#      no cert files or local Caddyfile-equivalent to manage.
-#   3. Public Hostname tab → add your domain/subdomain → Service type HTTP,
-#      URL "nginx:80" (the Docker service name — cloudflared and nginx share the
-#      "hris" network, so this resolves internally, never touching the host).
-#   4. In the dashboard's SSL/TLS settings for the zone, keep "Always Use HTTPS" on
-#      (Cloudflare's edge already forces HTTPS for tunnel routes; this is belt-and-
-#      suspenders). docker/nginx/default.prod.conf's own HSTS header still applies
-#      on top of that.
+# No dedicated cloudflared service here — the mini PC already runs a Cloudflare
+# Tunnel connector (for other apps on the same box, e.g. "server-abdi"). Reusing it
+# means one more Public Hostname route, not a second tunnel process:
+#   1. Pick a free host port for HRIS (default below: 8081 — change HRIS_PORT in
+#      .env if that collides with something else already running).
+#   2. Cloudflare Zero Trust dashboard → the existing tunnel → Public Hostname →
+#      Add a hostname (e.g. hris.yourdomain.com) → Service type HTTP →
+#      URL "localhost:8081" (or whatever HRIS_PORT you picked).
+#      This only works if the existing cloudflared connector shares the host's
+#      network — true for a systemd/native install, and for a Docker container run
+#      with `--network host`. If your connector instead runs in its own Docker
+#      bridge network, point the route at "host.docker.internal:8081" instead (only
+#      works if that connector container was started with
+#      --add-host=host.docker.internal:host-gateway, or you're on Docker Desktop).
+#      Run `systemctl status cloudflared` or `docker ps` / `docker inspect
+#      <container> --format '{{.HostConfig.NetworkMode}}'` on the mini PC first if
+#      you're not sure which case applies.
+#   3. No token, no new tunnel, no cloudflared service in this file — the existing
+#      connector already handles TLS termination and forwarding.
 #
-# Usage once the tunnel is created and CLOUDFLARE_TUNNEL_TOKEN is set:
+# Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 # (merges with the base file for the app/queue/scheduler/mysql/redis service
 # definitions — this file only overrides what production needs to differ.)
 #
-# Not yet exercised end-to-end: doing so needs a real Cloudflare tunnel + domain,
-# which don't exist in local dev. Validated so far with `docker compose -f
-# docker-compose.yml -f docker-compose.prod.yml config` (syntax/merge check only).
+# Not yet exercised end-to-end: doing so needs the real tunnel route added on the
+# mini PC, which doesn't exist in local dev. Validated so far with `docker compose
+# -f docker-compose.yml -f docker-compose.prod.yml config` (syntax/merge check only).
 
 services:
   app:
@@ -54,25 +66,14 @@ services:
 
   nginx:
     restart: always
-    ports: !reset []
+    ports:
+      - "127.0.0.1:${HRIS_PORT:-8081}:80"
     volumes:
       - ./src:/var/www/html:ro
       - ./docker/nginx/default.prod.conf:/etc/nginx/conf.d/default.conf:ro
 
   mysql:
     restart: always
-    ports: !reset []
 
   redis:
     restart: always
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: hris_cloudflared
-    restart: always
-    command: tunnel run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env — create a tunnel in the Cloudflare Zero Trust dashboard first, see the setup steps above}
-    depends_on:
-      - nginx
-    networks: [hris]

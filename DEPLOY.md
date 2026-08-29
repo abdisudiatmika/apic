@@ -2,9 +2,10 @@
 
 Panduan langkah demi langkah menjalankan aplikasi ini di mini PC pengguna (sudah
 terpasang Docker, Cloudflare, dan Tailscale), diakses publik lewat domain di akun
-Cloudflare via Cloudflare Tunnel. Ikuti urutan di bawah — beberapa langkah saling
-bergantung (migrasi butuh `vendor/` sudah ter-install, tunnel butuh container sudah
-jalan, dst).
+Cloudflare via Cloudflare Tunnel — **memakai tunnel yang sudah aktif di mini PC ini**
+(mis. "server-abdi", yang sudah punya route lain), bukan bikin tunnel baru. Ikuti
+urutan di bawah — beberapa langkah saling bergantung (migrasi butuh `vendor/` sudah
+ter-install, route Cloudflare butuh container sudah jalan di port yang benar, dst).
 
 Beda penting dari `README.md` (yang untuk lokal): mini PC ini clone **baru**, jadi
 tidak ada `vendor/`, `.env`, atau `APP_KEY` yang sudah ada dari sebelumnya — dan
@@ -14,9 +15,12 @@ proyek ini (`DemoHR#2026`, dst.) — aman untuk lokal, bahaya kalau publik.
 
 ## 1. Prasyarat di mini PC
 
-- Docker & Docker Compose v2 sudah terpasang dan menyala (`docker compose version`).
+- Docker & Docker Compose sudah terpasang dan menyala (`docker compose version`).
 - `git` terpasang.
 - Domain sudah ada sebagai zone aktif di akun Cloudflare (sudah dikonfirmasi ada).
+- Sudah ada Cloudflare Tunnel connector aktif di mini PC ini untuk aplikasi lain
+  (sudah dikonfirmasi ada — terlihat dari route yang sudah terdaftar di dashboard
+  Zero Trust).
 
 ## 2. Clone repository
 
@@ -25,19 +29,30 @@ git clone https://github.com/abdisudiatmika/apic.git
 cd apic
 ```
 
-## 3. Setup Cloudflare Tunnel (dashboard, sebelum lanjut)
+## 3. Cek cara connector Cloudflare Tunnel yang sudah ada berjalan
 
-1. Buka [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/) → **Networks → Tunnels → Create a tunnel** → pilih connector **Cloudflared**.
-2. Beri nama tunnel (mis. `hris-apic`), lanjut ke halaman instalasi — **salin token**
-   yang muncul di perintah instalasi (string panjang setelah `--token`). Ini
-   satu-satunya kredensial yang dibutuhkan, tidak perlu file sertifikat apa pun.
-3. Masih di halaman setup tunnel yang sama, buka tab **Public Hostname** → tambah:
-   - **Subdomain/Domain**: subdomain yang diinginkan (mis. `hris.namadomainanda.com`)
-   - **Service Type**: `HTTP`
-   - **URL**: `nginx:80` (nama service Docker, bukan alamat IP — cloudflared dan
-     nginx berbagi network `hris` yang sama, jadi nama ini otomatis resolve)
-4. Simpan. Tunnel ini baru benar-benar tersambung setelah container `cloudflared`
-   jalan (langkah 6) — belum perlu jalan sekarang.
+HRIS akan numpang di tunnel yang sudah ada, bukan bikin tunnel baru — tapi caranya
+menambahkan route sedikit beda tergantung cara connector itu sendiri terpasang.
+Jalankan di mini PC:
+
+```bash
+# Opsi A: connector terpasang sebagai service native (systemd)
+systemctl status cloudflared
+
+# Opsi B: connector jalan sebagai container Docker
+docker ps | grep cloudflared
+
+# Jika Opsi B, cek network mode container-nya:
+docker inspect <nama_container_cloudflared> --format '{{.HostConfig.NetworkMode}}'
+```
+
+Catat hasilnya — dipakai di langkah 8:
+- **systemd**, atau Docker dengan network mode **`host`** → connector berbagi
+  network stack dengan mini PC itu sendiri, route diarahkan ke `localhost:PORT`.
+- Docker dengan network mode **lain** (mis. `bridge` sendiri) → route perlu
+  diarahkan ke `host.docker.internal:PORT` (hanya berfungsi jika container itu
+  dijalankan dengan `--add-host=host.docker.internal:host-gateway`, atau connector
+  di-restart dengan opsi itu ditambahkan).
 
 ## 4. Setup `.env` root (level Docker Compose)
 
@@ -48,9 +63,12 @@ cp .env.example .env
 Edit `.env`, isi:
 - `UID` / `GID` — jalankan `id -u` dan `id -g` di mini PC, isi nilai aslinya (bukan nilai contoh).
 - `DB_PASSWORD` dan `DB_ROOT_PASSWORD` — password acak yang kuat, **beda satu sama lain**.
-- `CLOUDFLARE_TUNNEL_TOKEN` — token dari langkah 3.2 di atas.
-- **Hapus atau kosongkan baris `COMPOSE_PROFILES=dev`** — kalau dibiarkan, Mailpit
-  (mail catcher lokal, bukan untuk produksi) ikut jalan di server publik.
+- `HRIS_PORT` — port di `127.0.0.1` tempat nginx akan diakses (default 8081 kalau
+  dikosongkan). Ganti kalau port itu sudah dipakai aplikasi lain di mini PC yang
+  sama (`ss -tlnp | grep 8081` untuk cek).
+
+Baris `COMPOSE_PROFILES` yang mungkin ada di versi lama file ini **sudah tidak
+dipakai lagi** — abaikan/hapus kalau nemu.
 
 ## 5. Setup `.env` aplikasi Laravel (`src/.env`)
 
@@ -64,7 +82,7 @@ Edit `src/.env` — ini beda cukup banyak dari default lokal:
 APP_NAME="HRIS APIC"
 APP_ENV=production
 APP_DEBUG=false
-APP_URL=https://hris.namadomainanda.com   # domain dari langkah 3.3, dengan https://
+APP_URL=https://hris.namadomainanda.com   # domain yang akan dipakai di langkah 8
 
 DB_CONNECTION=mysql
 DB_HOST=mysql
@@ -103,9 +121,11 @@ MAIL_FROM_NAME="HRIS APIC"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-Ini menjalankan `app`, `queue`, `scheduler`, `nginx`, `mysql`, `redis`, dan
-`cloudflared` — tanpa Mailpit, tanpa port MySQL/nginx yang diekspos ke host (lihat
-komentar di `docker-compose.prod.yml` untuk detail tiap perbedaan dari setup lokal).
+Ini menjalankan `app`, `queue`, `scheduler`, `nginx`, `mysql`, `redis` — tanpa
+Mailpit, tanpa MySQL yang diekspos ke host, nginx hanya diekspos ke
+`127.0.0.1:${HRIS_PORT}` (bukan `0.0.0.0` — tidak bisa diakses dari LAN/internet
+langsung, hanya dari proses lain di mesin yang sama seperti connector Cloudflare
+Tunnel). Tidak ada service `cloudflared` baru di sini — lihat langkah 8.
 
 ## 7. Install dependency & siapkan aplikasi
 
@@ -116,7 +136,22 @@ docker compose exec app composer install --no-dev --optimize-autoloader
 docker compose exec app php artisan key:generate --force
 ```
 
-## 8. Migrasi & seed (TANPA data demo)
+## 8. Tambahkan route HRIS ke tunnel Cloudflare yang sudah ada
+
+Di dashboard Cloudflare Zero Trust → Networks → Tunnels → pilih tunnel yang sudah
+aktif (mis. "server-abdi") → tab **Public Hostname** → **Add a hostname**:
+
+- **Subdomain/Domain**: subdomain yang diinginkan (mis. `hris.namadomainanda.com`)
+- **Service Type**: `HTTP`
+- **URL**:
+  - `localhost:8081` (atau `HRIS_PORT` yang dipakai) — kalau hasil cek di langkah 3
+    adalah **systemd** atau Docker **network mode host**
+  - `host.docker.internal:8081` — kalau connector jalan di network Docker sendiri
+
+Simpan. Tidak perlu token baru, tidak perlu tunnel baru — route ini langsung aktif
+begitu disimpan, memakai connector yang sudah berjalan.
+
+## 9. Migrasi & seed (TANPA data demo)
 
 ```bash
 docker compose exec app php artisan migrate --force
@@ -128,7 +163,7 @@ docker compose exec app php artisan db:seed --class=LeaveTypeSeeder --force
 `DatabaseSeeder`, yang juga memanggil `DemoDataSeeder` — akun-akun demo publik
 seperti dijelaskan di bagian atas dokumen ini).
 
-## 9. Buat akun HR/Administrator pertama
+## 10. Buat akun HR/Administrator pertama
 
 Belum ada akun manusia sungguhan sampai langkah ini — buat lewat tinker:
 
@@ -150,29 +185,29 @@ Ganti role sesuai kebutuhan (`administrator`, `hr`, atau `direksi` untuk akses
 panel admin — `atasan`/`pegawai` untuk panel portal, biasanya dibuat lewat resource
 Data Pegawai setelah login pertama, bukan lewat tinker).
 
-## 10. Cache production & optimasi
+## 11. Cache production & optimasi
 
 ```bash
 docker compose exec app php artisan optimize
 ```
 
-## 11. Verifikasi
+## 12. Verifikasi
 
+- `curl -I http://localhost:8081/admin/login` langsung di mini PC — harus `200`,
+  bukan connection refused (kalau gagal, cek `docker compose logs nginx`).
 - Buka `https://hris.namadomainanda.com/admin/login` dari browser — harus muncul
-  halaman login (bukan error, bukan "502 Bad Gateway" dari Cloudflare — kalau
-  muncul itu berarti tunnel belum tersambung ke `nginx:80`, cek
-  `docker compose logs cloudflared`).
-- Login dengan akun dari langkah 9 → harus diarahkan ke setup 2FA wajib (lihat
+  halaman login (bukan error, bukan "502/1033" dari Cloudflare — kalau muncul
+  berarti route di langkah 8 belum tersambung dengan benar ke port HRIS).
+- Login dengan akun dari langkah 10 → harus diarahkan ke setup 2FA wajib (lihat
   `README.md` bagian Keamanan) → selesaikan enrollment dengan aplikasi authenticator
   sungguhan (Google Authenticator/Authy), bukan cara manual seperti saat pengujian
   lokal.
-- `docker compose ps` — pastikan semua container `running`, `cloudflared` khususnya
-  (`hris_cloudflared`) tidak restart-looping.
+- `docker compose ps` — pastikan semua container `running`.
 - `curl -sI https://hris.namadomainanda.com/admin/login | grep -i strict-transport`
   — pastikan header HSTS muncul.
 - Jalankan `./scripts/security-check.sh` — pastikan `composer audit` bersih.
 
-## 12. Backup terjadwal
+## 13. Backup terjadwal
 
 `scripts/backup-database.sh` sudah teruji (lihat README), tapi belum otomatis
 terjadwal — tambahkan ke crontab mini PC:
@@ -185,7 +220,7 @@ crontab -e
 0 2 * * * cd /path/ke/apic && ./scripts/backup-database.sh >> /var/log/hris-backup.log 2>&1
 ```
 
-## 13. Update aplikasi di kemudian hari
+## 14. Update aplikasi di kemudian hari
 
 ```bash
 git pull
@@ -197,10 +232,11 @@ docker compose exec app php artisan optimize
 
 ## Checklist ringkas
 
-- [ ] Tunnel Cloudflare dibuat, Public Hostname → `nginx:80`
-- [ ] `.env` root: `UID`/`GID` asli, password kuat, `CLOUDFLARE_TUNNEL_TOKEN` terisi, `COMPOSE_PROFILES` **tidak** `dev`
+- [ ] Cara connector Cloudflare Tunnel yang sudah ada dicek (systemd / Docker + network mode)
+- [ ] `.env` root: `UID`/`GID` asli, password kuat, `HRIS_PORT` dipilih (cek tidak bentrok)
 - [ ] `src/.env`: `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL` https, `SESSION_SECURE_COOKIE=true`, SMTP nyata
 - [ ] `composer install --no-dev`, `key:generate`
+- [ ] Route baru ditambahkan ke tunnel Cloudflare yang sudah ada (bukan tunnel baru)
 - [ ] Migrasi + seed **RoleSeeder & LeaveTypeSeeder saja** (bukan `DemoDataSeeder`)
 - [ ] Akun HR/Administrator pertama dibuat manual, 2FA aktif
 - [ ] `security-check.sh` bersih
