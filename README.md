@@ -161,16 +161,25 @@ Sudah dikerjakan sejak awal (lihat plan untuk detail lengkap):
 - `scripts/backup-database.sh` — dump terkompresi + retensi otomatis, **diuji
   dengan restore sungguhan** ke database sementara (bukan cuma cek file ada).
 
-**Disiapkan di Fase 4, tinggal dijalankan saat sudah di mini PC (butuh domain +
-DNS publik, tidak bisa diuji penuh di lokal):**
+**Disiapkan di Fase 4, tinggal dijalankan saat sudah di mini PC (butuh tunnel
+Cloudflare aktif, tidak bisa diuji penuh di lokal):**
 - `docker-compose.prod.yml` — overlay produksi: tanpa Mailpit (lewat Compose
   profiles, `mailpit` hanya aktif saat `COMPOSE_PROFILES=dev` — **jangan** set
   variabel ini di `.env` mini PC, atau Mailpit ikut jalan di produksi), MySQL &
   nginx tidak diekspos ke host sama sekali, `restart: always`,
-  `docker/php/php.prod.ini` (opcache tanpa validate_timestamps), service `caddy`
-  sebagai reverse proxy + HTTPS otomatis (Let's Encrypt). Sudah divalidasi
-  sintaksnya lewat `docker compose -f docker-compose.yml -f docker-compose.prod.yml
-  config`, belum diaktifkan nyata karena butuh domain.
+  `docker/php/php.prod.ini` (opcache tanpa validate_timestamps), service
+  `cloudflared` — Cloudflare Tunnel, dipilih karena mini PC sudah punya Cloudflare
+  & Tailscale terpasang: tidak perlu buka port di router/modem, HTTPS ditangani
+  penuh di edge Cloudflare, tinggal buat tunnel di dashboard Zero Trust (Networks →
+  Tunnels), arahkan Public Hostname ke `nginx:80`, dan isi token-nya ke
+  `CLOUDFLARE_TUNNEL_TOKEN` di `.env` — langkah lengkap ada sebagai komentar di
+  `docker-compose.prod.yml`. Sudah divalidasi sintaksnya lewat `docker compose -f
+  docker-compose.yml -f docker-compose.prod.yml config`, belum diaktifkan nyata
+  karena butuh tunnel token sungguhan.
+- `bootstrap/app.php` menambahkan `trustProxies(at: '*')` — wajib supaya Laravel
+  tahu request yang masuk lewat cloudflared→nginx sebenarnya HTTPS (cookie secure,
+  generate URL `https://`), aman dipakai karena nginx sendiri tidak pernah
+  langsung diakses dari luar baik di lokal maupun produksi.
 - HSTS (`Strict-Transport-Security`) — sudah ada di
   `docker/nginx/default.prod.conf`, sengaja dipisah dari `default.conf` karena
   header ini di atas HTTP polos hanya diabaikan browser.
@@ -183,14 +192,13 @@ DNS publik, tidak bisa diuji penuh di lokal):**
 hris-apic/
 ├── docker-compose.yml         # 7 service (dev): app, nginx, mysql, redis, queue,
 │                               # scheduler, mailpit (mailpit hanya profile "dev")
-├── docker-compose.prod.yml    # overlay produksi: +caddy, -mailpit, restart:always
+├── docker-compose.prod.yml    # overlay produksi: +cloudflared, -mailpit, restart:always
 ├── Dockerfile                  # image app (php-fpm), non-root
 ├── docker/
 │   ├── nginx/default.conf      # dev: security headers + CSP
 │   ├── nginx/default.prod.conf # prod: + HSTS
 │   ├── php/php.ini             # dev
-│   ├── php/php.prod.ini        # prod: opcache.validate_timestamps=0, cookie secure
-│   └── caddy/Caddyfile         # reverse proxy + HTTPS otomatis (butuh APP_DOMAIN)
+│   └── php/php.prod.ini        # prod: opcache.validate_timestamps=0, cookie secure
 ├── scripts/
 │   ├── security-check.sh       # composer audit + outdated + cek .env tak ter-commit
 │   └── backup-database.sh      # dump + kompres + retensi (RETENTION_DAYS)
@@ -239,5 +247,5 @@ docker compose exec app php artisan test
 ./scripts/backup-database.sh
 
 # validasi sintaks docker-compose.prod.yml (tidak menjalankan apa pun)
-APP_DOMAIN=hris.example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+CLOUDFLARE_TUNNEL_TOKEN=dummy docker compose -f docker-compose.yml -f docker-compose.prod.yml config
 ```

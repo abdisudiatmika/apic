@@ -12,7 +12,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // The mini PC deployment sits behind Cloudflare Tunnel (cloudflared) → nginx,
+        // both internal to the Docker network — nginx itself is never reachable
+        // directly from the internet, so trusting every proxy hop here is safe. Without
+        // this, Laravel can't tell the original request was HTTPS (breaks secure
+        // cookies and https:// URL generation) even though the browser sees HTTPS the
+        // whole way. Harmless locally too — dev has no proxy in front of nginx at all.
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

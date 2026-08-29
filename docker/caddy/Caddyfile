@@ -1,8 +1,0 @@
-# Reverse proxy + automatic HTTPS (Let's Encrypt) for the mini PC deployment.
-# APP_DOMAIN is read from the root .env (docker-compose.prod.yml passes it through).
-# Caddy needs a real, publicly-resolvable domain to request a certificate — this
-# file cannot be exercised locally, only validated for syntax (see scripts/ or
-# README for the "docker compose -f docker-compose.prod.yml config" check).
-{$APP_DOMAIN} {
-    reverse_proxy nginx:80
-}

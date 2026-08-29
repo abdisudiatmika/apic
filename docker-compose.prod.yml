@@ -2,20 +2,35 @@
 #   - no mailpit (use a real SMTP provider via src/.env)
 #   - mysql not exposed to the host at all (dev exposes 127.0.0.1:3307 for a local
 #     DB client; prod has no legitimate reason to reach it from outside the network)
-#   - nginx not exposed to the host either — caddy is the only public entrypoint,
-#     terminating HTTPS and reverse-proxying to nginx over the internal network
+#   - nginx not exposed to the host either — cloudflared is the only entrypoint, and
+#     it doesn't even listen on a port: it makes an outbound-only connection to
+#     Cloudflare's edge, which terminates HTTPS and forwards to nginx over the
+#     internal Docker network. No port-forwarding on the router, no public IP needed.
 #   - restart: always instead of unless-stopped (a mini PC should come back up on
 #     its own after a power loss with no human involved)
 #   - docker/php/php.prod.ini overlaid on top of the image's baked-in php.ini
 #   - docker/nginx/default.prod.conf (adds HSTS) instead of default.conf
 #
-# Usage once a domain points at the mini PC's public IP:
-#   APP_DOMAIN=hris.example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# One-time setup before first run (Cloudflare Zero Trust dashboard, not this repo):
+#   1. Networks → Tunnels → Create a tunnel → "Cloudflared" connector type.
+#   2. Copy the install command's token (the long string after "--token") into
+#      CLOUDFLARE_TUNNEL_TOKEN in the root .env — that's the only credential needed,
+#      no cert files or local Caddyfile-equivalent to manage.
+#   3. Public Hostname tab → add your domain/subdomain → Service type HTTP,
+#      URL "nginx:80" (the Docker service name — cloudflared and nginx share the
+#      "hris" network, so this resolves internally, never touching the host).
+#   4. In the dashboard's SSL/TLS settings for the zone, keep "Always Use HTTPS" on
+#      (Cloudflare's edge already forces HTTPS for tunnel routes; this is belt-and-
+#      suspenders). docker/nginx/default.prod.conf's own HSTS header still applies
+#      on top of that.
+#
+# Usage once the tunnel is created and CLOUDFLARE_TUNNEL_TOKEN is set:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 # (merges with the base file for the app/queue/scheduler/mysql/redis service
 # definitions — this file only overrides what production needs to differ.)
 #
-# Not yet exercised end-to-end: doing so needs a real domain and public DNS, which
-# don't exist in local dev. Validated so far with `docker compose -f
+# Not yet exercised end-to-end: doing so needs a real Cloudflare tunnel + domain,
+# which don't exist in local dev. Validated so far with `docker compose -f
 # docker-compose.yml -f docker-compose.prod.yml config` (syntax/merge check only).
 
 services:
@@ -51,23 +66,13 @@ services:
   redis:
     restart: always
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: hris_caddy
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: hris_cloudflared
     restart: always
+    command: tunnel run
     environment:
-      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN to the public hostname before deploying}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - hris_caddy_data:/data
-      - hris_caddy_config:/config
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env — create a tunnel in the Cloudflare Zero Trust dashboard first, see the setup steps above}
     depends_on:
       - nginx
     networks: [hris]
-
-volumes:
-  hris_caddy_data:
-  hris_caddy_config:
