@@ -6,6 +6,7 @@ use App\Jobs\ProcessAttendanceImport;
 use App\Models\AttendanceImport;
 use App\Models\Branch;
 use BackedEnum;
+use Closure;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
@@ -53,9 +54,27 @@ class UploadAttendanceImport extends Page
                     ->disk('local')
                     ->directory('attendance-imports')
                     ->visibility('private')
-                    ->acceptedFileTypes([
-                        'application/vnd.ms-excel',
-                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    // Not ->acceptedFileTypes() — that builds a `mimetypes:` rule against
+                    // Livewire's TemporaryUploadedFile::getMimeType(), which returns the
+                    // browser's self-reported upload Content-Type, not a re-sniffed one.
+                    // Browsers are inconsistent about what they declare for legacy .xls
+                    // (verified against a real attendance-machine export: correctly detected
+                    // as application/vnd.ms-excel when read straight off disk, yet rejected
+                    // here) — so this checks the file's actual bytes instead.
+                    ->rules([
+                        function (): Closure {
+                            return function (string $attribute, mixed $value, Closure $fail): void {
+                                $mime = mime_content_type($value->getRealPath());
+
+                                if (! in_array($mime, [
+                                    'application/vnd.ms-excel',
+                                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                    'application/zip', // .xlsx is a zip archive; some libmagic builds report it as this
+                                ], true)) {
+                                    $fail("File harus berupa Excel (.xls atau .xlsx). Terdeteksi: {$mime}.");
+                                }
+                            };
+                        },
                     ])
                     ->maxSize(10240)
                     ->required(),
