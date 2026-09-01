@@ -1,10 +1,12 @@
-# HRIS APIC — Fase 1–5 (Lokal, Docker)
+# HRIS APIC — Fase 1–6 (Lokal, Docker)
 
 Implementasi Fase 1 (fondasi: autentikasi, RBAC, data pegawai, master data, absensi +
 5.3.1 Import Excel), Fase 2 (Cuti & Bon Cuti: 5.5–5.8), Fase 3 (Koreksi Absensi 5.4,
-Surat Tugas/Perjalanan Dinas 5.10, Notifikasi 11), Fase 4 (hardening keamanan), dan
-Fase 5 (Laporan & Analitik HR — fitur 12) dari PRD "Sistem HR & Kepegawaian" v2.1 —
-**seluruh modul inti PRD sudah selesai.** Lihat
+Surat Tugas/Perjalanan Dinas 5.10, Notifikasi 11), Fase 4 (hardening keamanan), Fase 5
+(Laporan & Analitik HR — fitur 12), dan Fase 6 (Kelola User) dari PRD "Sistem HR &
+Kepegawaian" v2.1 — **seluruh modul inti PRD sudah selesai**, ditambah satu fitur di
+luar PRD yang ternyata dibutuhkan nyata saat deploy produksi (lihat Fase 6 di bawah).
+Lihat
 `/Users/abdisudiatmika/.claude/plans/melodic-cuddling-goose.md` untuk rencana lengkap
 tiap fase, atau dokumen PRD untuk gambaran seluruh sistem.
 
@@ -131,6 +133,23 @@ Notifikasi email/WhatsApp belum ada, baru notifikasi dalam aplikasi (bell icon).
   di PRD spesifik hanya menyebut kehadiran/keterlambatan/cuti/bon cuti/perjalanan dinas.
 
 Dengan Fase 5 selesai, **seluruh modul inti PRD v2.1 (fitur 1–13) sudah berfungsi.**
+
+## Yang sudah berfungsi di Fase 6
+
+- **Kelola User** (menu "Kelola User", grup "Pengaturan", panel admin — khusus
+  **Administrator**) — ditemukan sebagai gap nyata saat deploy produksi: 39 data
+  pegawai yang dibuat di server tidak satu pun bisa login, karena satu-satunya cara
+  membuat akun (`User`) selama ini adalah lewat `php artisan tinker`. Sekarang
+  Administrator bisa buat/edit akun (nama, email, kata sandi, satu peran dari 5 yang
+  ada) langsung lewat web. Bukan bagian dari PRD asli — PRD bagian 2 menyebut
+  "Administrator: Mengatur user, hak akses" sebagai tanggung jawabnya, tapi tidak
+  pernah dirinci jadi fitur 5.x tersendiri seperti modul lain.
+- Menautkan akun ke Data Pegawai **tetap** lewat field "Akun Login" yang sudah ada
+  di form Data Pegawai (Fase 1) — Kelola User tidak menduplikasi mekanisme itu.
+- `UserPolicy` lebih ketat dari Policy lain di sistem ini: hanya role
+  `administrator` (bukan `hasAnyRole([...])` seperti Data Pegawai yang HR juga
+  boleh kelola) — mengelola akun login & peran dianggap operasi paling sensitif.
+  Ada proteksi diri: administrator tidak bisa menghapus akunnya sendiri.
 
 ## Keamanan — status & item yang masih perlu dikerjakan
 
