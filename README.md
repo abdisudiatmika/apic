@@ -197,7 +197,10 @@ Cloudflare Tunnel aktif, tidak bisa diuji penuh di lokal):**
 - `docker-compose.prod.yml` — overlay produksi: tanpa Mailpit, MySQL tidak
   diekspos ke host sama sekali, nginx hanya diekspos ke `127.0.0.1` (bukan
   `0.0.0.0`) di port `HRIS_PORT` (default 8081), `restart: always`,
-  `docker/php/php.prod.ini` (opcache tanpa validate_timestamps). **Tidak ada
+  `docker/php/php.prod.ini` (opcache tanpa validate_timestamps — konsekuensinya:
+  `git pull` di produksi butuh `docker compose restart app queue scheduler`
+  sesudahnya, PHP tidak otomatis membaca ulang file yang berubah; lihat langkah
+  14 di `DEPLOY.md`). **Tidak ada
   service `cloudflared` di file ini** — mini PC sudah punya connector Cloudflare
   Tunnel aktif untuk aplikasi lain (nama contoh: "server-abdi"), jadi HRIS cukup
   ditambahkan sebagai satu route baru ke tunnel yang sudah ada (Zero Trust

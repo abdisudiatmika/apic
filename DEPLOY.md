@@ -228,7 +228,20 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 docker compose exec app composer install --no-dev --optimize-autoloader
 docker compose exec app php artisan migrate --force
 docker compose exec app php artisan optimize
+docker compose restart app queue scheduler
 ```
+
+**Baris terakhir (`restart`) wajib, jangan dilewati.** `php.prod.ini` mengaktifkan
+`opcache.validate_timestamps=0` (dibahas di README bagian Keamanan) — PHP tidak
+otomatis mendeteksi file `.php` yang berubah setelah `git pull`, tetap menjalankan
+versi lama yang sudah di-cache sampai proses PHP-FPM-nya benar-benar direstart.
+`up -d --build` **tidak selalu me-restart** container yang sudah jalan (Compose
+cuma recreate kalau ada konfigurasi yang berubah — kode di `src/` adalah bind
+mount, bukan bagian dari image, jadi berubah tanpa Compose "menyadarinya"), dan
+`php artisan optimize` sama sekali beda layer (cache Laravel, bukan cache PHP) —
+keduanya **tidak cukup** sendirian untuk membuat kode baru benar-benar aktif.
+Tandanya kalau langkah ini terlewat: kode sudah ter-`git pull` (`git log` menunjukkan
+commit terbaru) tapi perilaku aplikasi masih seperti versi sebelumnya.
 
 ## Checklist ringkas
 
