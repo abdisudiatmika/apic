@@ -228,20 +228,31 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 docker compose exec app composer install --no-dev --optimize-autoloader
 docker compose exec app php artisan migrate --force
 docker compose exec app php artisan optimize
-docker compose restart app queue scheduler
+docker compose restart app queue scheduler nginx
 ```
 
-**Baris terakhir (`restart`) wajib, jangan dilewati.** `php.prod.ini` mengaktifkan
-`opcache.validate_timestamps=0` (dibahas di README bagian Keamanan) — PHP tidak
-otomatis mendeteksi file `.php` yang berubah setelah `git pull`, tetap menjalankan
-versi lama yang sudah di-cache sampai proses PHP-FPM-nya benar-benar direstart.
-`up -d --build` **tidak selalu me-restart** container yang sudah jalan (Compose
-cuma recreate kalau ada konfigurasi yang berubah — kode di `src/` adalah bind
-mount, bukan bagian dari image, jadi berubah tanpa Compose "menyadarinya"), dan
-`php artisan optimize` sama sekali beda layer (cache Laravel, bukan cache PHP) —
-keduanya **tidak cukup** sendirian untuk membuat kode baru benar-benar aktif.
-Tandanya kalau langkah ini terlewat: kode sudah ter-`git pull` (`git log` menunjukkan
-commit terbaru) tapi perilaku aplikasi masih seperti versi sebelumnya.
+**Baris terakhir (`restart`) wajib, jangan dilewati — termasuk `nginx`.**
+`php.prod.ini` mengaktifkan `opcache.validate_timestamps=0` (dibahas di README
+bagian Keamanan) — PHP tidak otomatis mendeteksi file `.php` yang berubah setelah
+`git pull`, tetap menjalankan versi lama yang sudah di-cache sampai proses
+PHP-FPM-nya benar-benar direstart. `up -d --build` **tidak selalu me-restart**
+container yang sudah jalan (Compose cuma recreate kalau ada konfigurasi yang
+berubah — kode di `src/` adalah bind mount, bukan bagian dari image, jadi berubah
+tanpa Compose "menyadarinya"), dan `php artisan optimize` sama sekali beda layer
+(cache Laravel, bukan cache PHP) — keduanya **tidak cukup** sendirian untuk
+membuat kode baru benar-benar aktif. Tandanya kalau langkah ini terlewat: kode
+sudah ter-`git pull` (`git log` menunjukkan commit terbaru) tapi perilaku
+aplikasi masih seperti versi sebelumnya.
+
+`nginx` ikut di-restart bukan karena dia sendiri butuh kode baru (nginx tidak
+menjalankan PHP), tapi karena nginx me-resolve alamat IP internal container
+`app` **sekali saat startup** lewat `fastcgi_pass app:9000` dan menyimpannya
+selama proses nginx itu hidup. Kalau cuma `app` yang direstart (dapat IP
+internal baru dari Docker) sementara nginx dibiarkan jalan terus, nginx masih
+mencoba menghubungi IP lama yang sudah tidak ada → `502 Bad Gateway` /
+`connect() failed (111: Connection refused)` di log nginx, meski `app` sendiri
+sehat sepenuhnya. Merestart `nginx` bersamaan memaksanya resolve ulang alamat
+yang benar.
 
 ## Checklist ringkas
 
