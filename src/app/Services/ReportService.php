@@ -3,17 +3,19 @@
 namespace App\Services;
 
 use App\Models\Employee;
+use App\Models\LeaveType;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 /**
- * PRD 12 — "Laporan & Analitik HR": satu tempat untuk keempat ringkasan yang
- * diminta (kehadiran+keterlambatan, cuti, bon cuti, perjalanan dinas), dipakai baik
- * oleh App\Filament\Pages\Reports (tampilan layar) maupun ReportExportController
- * (Excel/PDF) supaya angka yang diunduh selalu cocok dengan yang tampil di layar
- * untuk filter yang sama. Pola sama seperti LeaveBalanceService yang sudah ada:
- * Eloquent biasa dengan eager-load berconstraint tanggal, bukan raw SQL aggregate.
+ * PRD 12 — "Laporan & Analitik HR": satu tabel gabungan per pegawai (kehadiran,
+ * keterlambatan, jam kerja, cuti) plus ringkasan & grafik untuk halaman
+ * App\Filament\Pages\Reports dan ReportExportController, supaya angka yang
+ * diunduh selalu cocok dengan yang tampil di layar untuk filter yang sama.
+ * Fase 7 menggantikan 4 method terpisah (attendance/leave/leaveAdvance/travel)
+ * dengan satu method employeePerformance() sesuai permintaan pengguna untuk
+ * menggabungkan laporan jadi satu tabel.
  */
 class ReportService
 {
@@ -21,25 +23,44 @@ class ReportService
      * @param  array{start_date: string, end_date: string, department_id: ?int, branch_id: ?int}  $filters
      * @return Collection<int, object>
      */
-    public function attendanceSummary(array $filters): Collection
+    public function employeePerformance(array $filters): Collection
     {
         [$start, $end] = $this->range($filters);
+        $year = now()->year;
+        $leaveTypes = LeaveType::where('is_active', true)->get();
+        $balanceService = app(LeaveBalanceService::class);
 
         return $this->scopedEmployees($filters)
-            ->with(['attendanceLogs' => fn ($q) => $q->whereBetween('date', [$start->toDateString(), $end->toDateString()])])
+            ->with([
+                'department',
+                'attendanceLogs' => fn ($q) => $q->whereBetween('date', [$start->toDateString(), $end->toDateString()]),
+                'leaveRequests' => fn ($q) => $q->where('status', 'disetujui')->whereYear('start_date', $year),
+            ])
             ->get()
-            ->map(function (Employee $employee) {
+            ->map(function (Employee $employee) use ($leaveTypes, $balanceService, $year) {
                 $logs = $employee->attendanceLogs;
-                $late = $logs->where('status', 'terlambat');
+                $withHours = $logs->filter(fn ($log) => $log->check_in && $log->check_out);
+
+                // Sisa Cuti dihitung untuk tahun berjalan lintas semua jenis cuti aktif,
+                // bukan mengikuti filter rentang tanggal halaman — "sisa saldo" adalah
+                // status berjalan tahunan, bukan sesuatu yang bisa dipotong per rentang
+                // tanggal sembarang. Bisa negatif kalau Bon Cuti melebihi hak (LeaveBalanceService).
+                $sisaCuti = $leaveTypes->sum(
+                    fn (LeaveType $type) => $balanceService->summary($employee, $type, $year)->available
+                );
 
                 return (object) [
                     'employee' => $employee,
                     'hadir' => $logs->whereIn('status', ['hadir', 'terlambat'])->count(),
-                    'terlambat' => $late->count(),
+                    'terlambat' => $logs->where('status', 'terlambat')->count(),
                     'tidak_hadir' => $logs->where('status', 'tidak_hadir')->count(),
-                    'dinas' => $logs->where('status', 'dinas')->count(),
-                    'total_late_minutes' => (int) $late->sum('late_minutes'),
-                    'avg_late_minutes' => $late->isNotEmpty() ? round($late->avg('late_minutes'), 1) : 0.0,
+                    'avg_work_hours' => $withHours->isNotEmpty()
+                        ? round($withHours->avg(
+                            fn ($log) => Carbon::parse($log->check_out)->diffInMinutes(Carbon::parse($log->check_in), true) / 60
+                        ), 1)
+                        : 0.0,
+                    'total_cuti_days' => (float) $employee->leaveRequests->sum('days'),
+                    'sisa_cuti' => $sisaCuti,
                 ];
             })
             ->sortBy(fn ($row) => $row->employee->name)
@@ -47,86 +68,108 @@ class ReportService
     }
 
     /**
-     * @param  array{start_date: string, end_date: string, department_id: ?int, branch_id: ?int}  $filters
-     * @return Collection<int, object>
-     */
-    public function leaveSummary(array $filters): Collection
-    {
-        [$start, $end] = $this->range($filters);
-
-        return $this->scopedEmployees($filters)
-            ->with(['leaveRequests' => fn ($q) => $q->where('start_date', '<=', $end)->where('end_date', '>=', $start)])
-            ->get()
-            ->map(function (Employee $employee) {
-                $requests = $employee->leaveRequests;
-
-                return (object) [
-                    'employee' => $employee,
-                    'total_pengajuan' => $requests->count(),
-                    'hari_disetujui' => (float) $requests->where('status', 'disetujui')->sum('days'),
-                    'hari_pending' => (float) $requests->whereIn('status', ['menunggu_atasan', 'menunggu_hr'])->sum('days'),
-                    'ditolak' => $requests->where('status', 'ditolak')->count(),
-                ];
-            })
-            ->sortBy(fn ($row) => $row->employee->name)
-            ->values();
-    }
-
-    /**
-     * Bon Cuti tidak punya rentang tanggal sendiri (bukan seperti Cuti/Surat
-     * Tugas) — pengajuan disaring berdasarkan tanggal diajukan (created_at).
+     * Kartu ringkasan bento di puncak halaman, dengan delta terhadap periode
+     * sebelumnya (rentang sepanjang periode aktif, langsung sebelum start_date) —
+     * pendekatan approksimasi untuk kesan tren, bukan perbandingan kalender presisi.
      *
      * @param  array{start_date: string, end_date: string, department_id: ?int, branch_id: ?int}  $filters
-     * @return Collection<int, object>
      */
-    public function leaveAdvanceSummary(array $filters): Collection
+    public function summaryStats(array $filters): object
     {
         [$start, $end] = $this->range($filters);
+        $current = $this->computeStats($filters, $start, $end);
 
-        return $this->scopedEmployees($filters)
-            ->with(['leaveAdvances' => fn ($q) => $q->whereBetween('created_at', [$start->startOfDay(), $end->endOfDay()])])
-            ->get()
-            ->map(function (Employee $employee) {
-                $advances = $employee->leaveAdvances;
-                $approved = $advances->where('status', 'disetujui');
+        $periodDays = $start->diffInDays($end) + 1;
+        $previousEnd = (clone $start)->subDay();
+        $previousStart = (clone $previousEnd)->subDays($periodDays - 1);
+        $previous = $this->computeStats($filters, $previousStart, $previousEnd);
 
-                return (object) [
-                    'employee' => $employee,
-                    'total_pengajuan' => $advances->count(),
-                    'total_hari' => (float) $approved->sum('days'),
-                    'outstanding' => (float) $approved->sum('outstanding_days'),
-                    'lunas' => $approved->whereNotNull('settled_at')->count(),
-                ];
-            })
-            ->sortBy(fn ($row) => $row->employee->name)
-            ->values();
+        return (object) [
+            'total_late_hours' => $current->total_late_hours,
+            'total_late_hours_delta' => $current->total_late_hours - $previous->total_late_hours,
+            'avg_attendance_pct' => $current->avg_attendance_pct,
+            'avg_attendance_pct_delta' => $current->avg_attendance_pct - $previous->avg_attendance_pct,
+            'perfect_attendance_count' => $current->perfect_attendance_count,
+            'perfect_attendance_count_delta' => $current->perfect_attendance_count - $previous->perfect_attendance_count,
+            'avg_work_hours' => $current->avg_work_hours,
+            'avg_work_hours_delta' => $current->avg_work_hours - $previous->avg_work_hours,
+        ];
     }
 
     /**
-     * @param  array{start_date: string, end_date: string, department_id: ?int, branch_id: ?int}  $filters
-     * @return Collection<int, object>
+     * @param  array{department_id: ?int, branch_id: ?int}  $filters
      */
-    public function travelSummary(array $filters): Collection
+    private function computeStats(array $filters, Carbon $start, Carbon $end): object
+    {
+        $employees = $this->scopedEmployees($filters)
+            ->with(['attendanceLogs' => fn ($q) => $q->whereBetween('date', [$start->toDateString(), $end->toDateString()])])
+            ->get();
+
+        $totalLateMinutes = 0;
+        $totalHadirTerlambat = 0;
+        $totalTidakHadir = 0;
+        $perfectCount = 0;
+        $workHourSamples = collect();
+
+        foreach ($employees as $employee) {
+            $logs = $employee->attendanceLogs;
+            $hadir = $logs->whereIn('status', ['hadir', 'terlambat'])->count();
+            $terlambat = $logs->where('status', 'terlambat')->count();
+            $tidakHadir = $logs->where('status', 'tidak_hadir')->count();
+
+            $totalLateMinutes += (int) $logs->where('status', 'terlambat')->sum('late_minutes');
+            $totalHadirTerlambat += $hadir;
+            $totalTidakHadir += $tidakHadir;
+
+            if ($hadir > 0 && $terlambat === 0 && $tidakHadir === 0) {
+                $perfectCount++;
+            }
+
+            foreach ($logs->filter(fn ($log) => $log->check_in && $log->check_out) as $log) {
+                $workHourSamples->push(
+                    Carbon::parse($log->check_out)->diffInMinutes(Carbon::parse($log->check_in), true) / 60
+                );
+            }
+        }
+
+        $attendanceDenominator = $totalHadirTerlambat + $totalTidakHadir;
+
+        return (object) [
+            'total_late_hours' => round($totalLateMinutes / 60, 1),
+            'avg_attendance_pct' => $attendanceDenominator > 0
+                ? round($totalHadirTerlambat / $attendanceDenominator * 100, 1)
+                : 0.0,
+            'perfect_attendance_count' => $perfectCount,
+            'avg_work_hours' => $workHourSamples->isNotEmpty() ? round($workHourSamples->avg(), 1) : 0.0,
+        ];
+    }
+
+    /**
+     * Total jam keterlambatan per departemen, untuk bar chart CSS "Analisis
+     * Keterlambatan per Departemen" — dirender sebagai <div> proporsional di
+     * Blade, tanpa Chart.js/widget tambahan.
+     *
+     * @param  array{start_date: string, end_date: string, department_id: ?int, branch_id: ?int}  $filters
+     * @return Collection<int, object{department: string, hours: float}>
+     */
+    public function departmentLateness(array $filters): Collection
     {
         [$start, $end] = $this->range($filters);
 
         return $this->scopedEmployees($filters)
-            ->with(['travelAssignments' => fn ($q) => $q->where('status', 'disetujui')
-                ->where('start_date', '<=', $end)
-                ->where('end_date', '>=', $start)])
+            ->with([
+                'department',
+                'attendanceLogs' => fn ($q) => $q->where('status', 'terlambat')
+                    ->whereBetween('date', [$start->toDateString(), $end->toDateString()]),
+            ])
             ->get()
-            ->map(function (Employee $employee) {
-                $assignments = $employee->travelAssignments;
-
-                return (object) [
-                    'employee' => $employee,
-                    'surat_tugas' => $assignments->where('type', 'surat_tugas')->count(),
-                    'perjalanan_dinas' => $assignments->where('type', 'perjalanan_dinas')->count(),
-                    'surat_jalan' => $assignments->where('type', 'surat_jalan')->count(),
-                    'total_hari' => (int) $assignments->sum(fn ($a) => $a->start_date->diffInDays($a->end_date) + 1),
-                ];
-            })
-            ->sortBy(fn ($row) => $row->employee->name)
+            ->groupBy(fn (Employee $employee) => $employee->department?->name ?? 'Tanpa Departemen')
+            ->map(fn (Collection $employees, string $department) => (object) [
+                'department' => $department,
+                'hours' => round($employees->sum(fn (Employee $e) => $e->attendanceLogs->sum('late_minutes')) / 60, 1),
+            ])
+            ->values()
+            ->sortByDesc('hours')
             ->values();
     }
 

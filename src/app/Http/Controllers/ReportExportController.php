@@ -2,10 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Exports\AttendanceSummaryExport;
-use App\Exports\LeaveAdvanceSummaryExport;
-use App\Exports\LeaveSummaryExport;
-use App\Exports\TravelSummaryExport;
+use App\Exports\EmployeePerformanceExport;
 use App\Models\Branch;
 use App\Models\Department;
 use App\Services\ReportService;
@@ -25,96 +22,27 @@ class ReportExportController extends Controller
 {
     public function __construct(private readonly ReportService $reports) {}
 
-    public function attendanceExcel(Request $request): BinaryFileResponse
+    public function employeePerformanceExcel(Request $request): BinaryFileResponse
     {
         $this->authorize($request);
 
         return Excel::download(
-            new AttendanceSummaryExport($this->reports->attendanceSummary($this->filters($request))),
-            'laporan-kehadiran-' . now()->format('Y-m-d') . '.xlsx',
+            new EmployeePerformanceExport($this->reports->employeePerformance($this->filters($request))),
+            'laporan-performa-karyawan-' . now()->format('Y-m-d') . '.xlsx',
         );
     }
 
-    public function attendancePdf(Request $request): Response
+    public function employeePerformancePdf(Request $request): Response
     {
         $this->authorize($request);
 
         $filters = $this->filters($request);
 
-        return Pdf::loadView('pdf.reports.attendance-summary', [
-            'rows' => $this->reports->attendanceSummary($filters),
+        return Pdf::loadView('pdf.reports.employee-performance', [
+            'rows' => $this->reports->employeePerformance($filters),
             'filters' => $filters,
             ...$this->filterLabels($filters),
-        ])->stream('laporan-kehadiran-' . now()->format('Y-m-d') . '.pdf');
-    }
-
-    public function leaveExcel(Request $request): BinaryFileResponse
-    {
-        $this->authorize($request);
-
-        return Excel::download(
-            new LeaveSummaryExport($this->reports->leaveSummary($this->filters($request))),
-            'laporan-cuti-' . now()->format('Y-m-d') . '.xlsx',
-        );
-    }
-
-    public function leavePdf(Request $request): Response
-    {
-        $this->authorize($request);
-
-        $filters = $this->filters($request);
-
-        return Pdf::loadView('pdf.reports.leave-summary', [
-            'rows' => $this->reports->leaveSummary($filters),
-            'filters' => $filters,
-            ...$this->filterLabels($filters),
-        ])->stream('laporan-cuti-' . now()->format('Y-m-d') . '.pdf');
-    }
-
-    public function leaveAdvanceExcel(Request $request): BinaryFileResponse
-    {
-        $this->authorize($request);
-
-        return Excel::download(
-            new LeaveAdvanceSummaryExport($this->reports->leaveAdvanceSummary($this->filters($request))),
-            'laporan-bon-cuti-' . now()->format('Y-m-d') . '.xlsx',
-        );
-    }
-
-    public function leaveAdvancePdf(Request $request): Response
-    {
-        $this->authorize($request);
-
-        $filters = $this->filters($request);
-
-        return Pdf::loadView('pdf.reports.leave-advance-summary', [
-            'rows' => $this->reports->leaveAdvanceSummary($filters),
-            'filters' => $filters,
-            ...$this->filterLabels($filters),
-        ])->stream('laporan-bon-cuti-' . now()->format('Y-m-d') . '.pdf');
-    }
-
-    public function travelExcel(Request $request): BinaryFileResponse
-    {
-        $this->authorize($request);
-
-        return Excel::download(
-            new TravelSummaryExport($this->reports->travelSummary($this->filters($request))),
-            'laporan-perjalanan-dinas-' . now()->format('Y-m-d') . '.xlsx',
-        );
-    }
-
-    public function travelPdf(Request $request): Response
-    {
-        $this->authorize($request);
-
-        $filters = $this->filters($request);
-
-        return Pdf::loadView('pdf.reports.travel-summary', [
-            'rows' => $this->reports->travelSummary($filters),
-            'filters' => $filters,
-            ...$this->filterLabels($filters),
-        ])->stream('laporan-perjalanan-dinas-' . now()->format('Y-m-d') . '.pdf');
+        ])->stream('laporan-performa-karyawan-' . now()->format('Y-m-d') . '.pdf');
     }
 
     private function authorize(Request $request): void

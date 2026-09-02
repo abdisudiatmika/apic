@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Laporan Cuti</title>
+    <title>Laporan Performa Karyawan</title>
     <style>
         body { font-family: 'Helvetica', sans-serif; font-size: 12px; color: #1a1a1a; }
         .header { text-align: center; border-bottom: 3px double #1a1a1a; padding-bottom: 10px; margin-bottom: 20px; }
@@ -15,6 +15,7 @@
         table.data th, table.data td { border: 1px solid #999; padding: 6px 8px; font-size: 11px; text-align: left; }
         table.data th { background: #f0f0f0; }
         table.data td.num { text-align: right; }
+        td.negative { color: #b91c1c; font-weight: bold; }
         .footer-note { margin-top: 30px; font-size: 9px; color: #888; }
     </style>
 </head>
@@ -25,7 +26,7 @@
     </div>
 
     <div class="title">
-        <h2>LAPORAN CUTI</h2>
+        <h2>LAPORAN PERFORMA KARYAWAN</h2>
         <p>Periode: {{ \Illuminate\Support\Carbon::parse($filters['start_date'])->translatedFormat('d F Y') }}
             &ndash; {{ \Illuminate\Support\Carbon::parse($filters['end_date'])->translatedFormat('d F Y') }}</p>
         @if ($departmentName || $branchName)
@@ -37,23 +38,27 @@
         <thead>
             <tr>
                 <th>Pegawai</th>
-                <th>Total Pengajuan</th>
-                <th>Hari Disetujui</th>
-                <th>Hari Pending</th>
-                <th>Ditolak</th>
+                <th>Departemen</th>
+                <th>Hadir</th>
+                <th>Terlambat</th>
+                <th>Rata-rata Jam Kerja</th>
+                <th>Total Cuti</th>
+                <th>Sisa Cuti</th>
             </tr>
         </thead>
         <tbody>
             @forelse ($rows as $row)
                 <tr>
                     <td>{{ $row->employee->name }}</td>
-                    <td class="num">{{ $row->total_pengajuan }}</td>
-                    <td class="num">{{ $row->hari_disetujui }}</td>
-                    <td class="num">{{ $row->hari_pending }}</td>
-                    <td class="num">{{ $row->ditolak }}</td>
+                    <td>{{ $row->employee->department?->name ?? '-' }}</td>
+                    <td class="num">{{ $row->hadir }}</td>
+                    <td class="num">{{ $row->terlambat }}</td>
+                    <td class="num">{{ $row->avg_work_hours }}</td>
+                    <td class="num">{{ $row->total_cuti_days }}</td>
+                    <td class="num {{ $row->sisa_cuti < 0 ? 'negative' : '' }}">{{ $row->sisa_cuti }}</td>
                 </tr>
             @empty
-                <tr><td colspan="5" style="text-align:center">Tidak ada data.</td></tr>
+                <tr><td colspan="7" style="text-align:center">Tidak ada data.</td></tr>
             @endforelse
         </tbody>
     </table>

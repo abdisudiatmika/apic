@@ -8,7 +8,7 @@ use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 
-class LeaveSummaryExport implements Export, FromCollection, WithHeadings, WithMapping
+class EmployeePerformanceExport implements Export, FromCollection, WithHeadings, WithMapping
 {
     public function __construct(private readonly Collection $rows) {}
 
@@ -19,17 +19,19 @@ class LeaveSummaryExport implements Export, FromCollection, WithHeadings, WithMa
 
     public function headings(): array
     {
-        return ['Pegawai', 'Total Pengajuan', 'Hari Disetujui', 'Hari Pending', 'Ditolak'];
+        return ['Pegawai', 'Departemen', 'Hadir', 'Terlambat', 'Rata-rata Jam Kerja', 'Total Cuti', 'Sisa Cuti'];
     }
 
     public function map($row): array
     {
         return [
             $row->employee->name,
-            $row->total_pengajuan,
-            $row->hari_disetujui,
-            $row->hari_pending,
-            $row->ditolak,
+            $row->employee->department?->name ?? '-',
+            $row->hadir,
+            $row->terlambat,
+            $row->avg_work_hours,
+            $row->total_cuti_days,
+            $row->sisa_cuti,
         ];
     }
 }

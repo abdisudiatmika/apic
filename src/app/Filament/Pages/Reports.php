@@ -17,10 +17,10 @@ use Illuminate\Support\Collection;
 use UnitEnum;
 
 /**
- * PRD 12 — "Laporan & Analitik HR". One page bundling all four requested summaries
- * behind one shared filter bar, matching TeamLeaveCalendar's pattern (plain
- * computed rows rendered straight from Blade, no Filament Table framework) rather
- * than four separate CRUD-style resources.
+ * PRD 12 — "Laporan & Analitik HR". Fase 7: satu tabel gabungan per pegawai
+ * (bukan lagi 4 bagian terpisah), dengan kartu ringkasan & grafik keterlambatan
+ * per departemen di atasnya. Masih pola computed-rows-dari-Blade seperti
+ * TeamLeaveCalendar, bukan Filament Table framework.
  */
 class Reports extends Page
 {
@@ -36,6 +36,10 @@ class Reports extends Page
 
     /** @var array<string, mixed> */
     public ?array $data = [];
+
+    public int $page = 1;
+
+    protected int $perPage = 10;
 
     private ?array $cachedFilters = null;
 
@@ -80,6 +84,18 @@ class Reports extends Page
     }
 
     /**
+     * Filter/pencarian berubah → kembali ke halaman 1, supaya paginasi tidak
+     * "nyangkut" di halaman kosong ketika hasil yang cocok jadi lebih sedikit.
+     */
+    public function updated(string $property): void
+    {
+        if (str_starts_with($property, 'data.')) {
+            $this->cachedFilters = null;
+            $this->page = 1;
+        }
+    }
+
+    /**
      * @return array{start_date: string, end_date: string, department_id: ?int, branch_id: ?int}
      */
     public function getFilters(): array
@@ -87,32 +103,47 @@ class Reports extends Page
         return $this->cachedFilters ??= $this->form->getState();
     }
 
-    public function getAttendanceRows(): Collection
+    public function getSummaryStats(): object
     {
-        return $this->applySearch(app(ReportService::class)->attendanceSummary($this->getFilters()));
+        return app(ReportService::class)->summaryStats($this->getFilters());
     }
 
-    public function getLeaveRows(): Collection
+    public function getDepartmentLateness(): Collection
     {
-        return $this->applySearch(app(ReportService::class)->leaveSummary($this->getFilters()));
+        return app(ReportService::class)->departmentLateness($this->getFilters());
     }
 
-    public function getLeaveAdvanceRows(): Collection
+    private function allEmployeeRows(): Collection
     {
-        return $this->applySearch(app(ReportService::class)->leaveAdvanceSummary($this->getFilters()));
+        return $this->applySearch(app(ReportService::class)->employeePerformance($this->getFilters()));
     }
 
-    public function getTravelRows(): Collection
+    public function getEmployeeRowsTotal(): int
     {
-        return $this->applySearch(app(ReportService::class)->travelSummary($this->getFilters()));
+        return $this->allEmployeeRows()->count();
     }
 
-    /**
-     * "Cari Pegawai" applies to all four tables at once — a report page is scanned
-     * for one person's numbers across every section, not searched section by
-     * section. Filtered here in PHP (not pushed into ReportService) since it's a
-     * display-only narrowing of an already-computed summary, not a data query.
-     */
+    public function getEmployeeRows(): Collection
+    {
+        return $this->allEmployeeRows()->forPage($this->page, $this->perPage)->values();
+    }
+
+    public function getPerPage(): int
+    {
+        return $this->perPage;
+    }
+
+    public function previousPage(): void
+    {
+        $this->page = max(1, $this->page - 1);
+    }
+
+    public function nextPage(): void
+    {
+        $lastPage = max(1, (int) ceil($this->getEmployeeRowsTotal() / $this->perPage));
+        $this->page = min($lastPage, $this->page + 1);
+    }
+
     private function applySearch(Collection $rows): Collection
     {
         $search = trim((string) ($this->getFilters()['search'] ?? ''));
