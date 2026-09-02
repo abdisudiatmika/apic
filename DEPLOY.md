@@ -222,6 +222,15 @@ crontab -e
 
 ## 14. Update aplikasi di kemudian hari
 
+Jalan pintas — `scripts/update-production.sh` membungkus seluruh urutan di
+bawah ini persis sama:
+
+```bash
+./scripts/update-production.sh
+```
+
+Atau manual, langkah per langkah:
+
 ```bash
 git pull
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
