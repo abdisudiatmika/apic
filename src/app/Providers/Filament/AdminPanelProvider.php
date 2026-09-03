@@ -30,6 +30,11 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            // Tanpa ini, kelas Tailwind mentah yang ditulis langsung di Blade
+            // custom (mis. resources/views/filament/pages/reports.blade.php)
+            // tidak pernah ter-compile — CSS bawaan Filament hanya berisi
+            // kelas yang dipakai komponen Filament sendiri.
+            ->viteTheme('resources/css/filament/theme.css')
             // Filament's default UiAvatarsProvider sends every user's name to
             // ui-avatars.com and is blocked by our img-src CSP anyway — this
             // renders the same style of avatar locally instead.

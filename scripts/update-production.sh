@@ -25,6 +25,11 @@ echo "==> composer install (produksi, tanpa dev dependencies)"
 "${COMPOSE[@]}" exec -T app composer install --no-dev --optimize-autoloader
 
 echo
+echo "==> npm ci && build asset (theme Filament kustom — lihat resources/css/filament/theme.css)"
+"${COMPOSE[@]}" exec -T app npm ci
+"${COMPOSE[@]}" exec -T app npm run build
+
+echo
 echo "==> Menjalankan migration yang belum jalan"
 "${COMPOSE[@]}" exec -T app php artisan migrate --force
 

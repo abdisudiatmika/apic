@@ -28,6 +28,10 @@ class PortalPanelProvider extends PanelProvider
             ->id('portal')
             ->path('portal')
             ->login()
+            // Sama seperti di AdminPanelProvider — theme kustom ini yang
+            // meng-compile kelas Tailwind dari Blade custom panel ini juga
+            // (mis. resources/views/filament/portal/pages/team-leave-calendar.blade.php).
+            ->viteTheme('resources/css/filament/theme.css')
             ->defaultAvatarProvider(LocalInitialsAvatarProvider::class)
             ->databaseNotifications()
             ->colors([

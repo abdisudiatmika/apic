@@ -24,8 +24,16 @@ cp .env.example .env
 # (jangan pakai nilai contoh apa adanya)
 
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+docker compose exec app npm ci
+docker compose exec app npm run build
 docker compose exec app php artisan migrate --seed
 ```
+
+`npm run build` meng-compile `resources/css/filament/theme.css`, custom theme
+Filament yang menyediakan kelas Tailwind untuk halaman-halaman custom (Laporan
+& Analitik, Kalender Cuti, dll) — CSS bawaan Filament sendiri cuma berisi
+kelas yang dipakai komponen Filament, jadi ini wajib dijalankan ulang setiap
+kali ada kelas Tailwind baru ditambahkan ke Blade custom, tidak otomatis.
 
 `docker-compose.dev.yml` menambahkan Mailpit dan port host (8080 untuk nginx, 3307
 untuk MySQL) di atas `docker-compose.yml` — dipisah jadi file sendiri (bukan

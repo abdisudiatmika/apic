@@ -133,8 +133,17 @@ Clone baru belum punya `vendor/` — install dulu sebelum artisan command apa pu
 
 ```bash
 docker compose exec app composer install --no-dev --optimize-autoloader
+docker compose exec app npm ci
+docker compose exec app npm run build
 docker compose exec app php artisan key:generate --force
 ```
+
+`npm run build` meng-compile theme kustom Filament
+(`resources/css/filament/theme.css`) yang dipakai halaman-halaman custom
+seperti Laporan & Analitik dan Kalender Cuti — tanpa ini, kelas Tailwind yang
+ditulis langsung di Blade halaman-halaman itu tidak akan tampil (CSS bawaan
+Filament sendiri cuma berisi kelas yang dipakai komponen Filament, bukan kelas
+di Blade kustom kita).
 
 ## 8. Tambahkan route HRIS ke tunnel Cloudflare yang sudah ada
 
@@ -235,6 +244,8 @@ Atau manual, langkah per langkah:
 git pull
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 docker compose exec app composer install --no-dev --optimize-autoloader
+docker compose exec app npm ci
+docker compose exec app npm run build
 docker compose exec app php artisan migrate --force
 docker compose exec app php artisan optimize
 docker compose restart app queue scheduler nginx
@@ -268,7 +279,7 @@ yang benar.
 - [ ] Cara connector Cloudflare Tunnel yang sudah ada dicek (systemd / Docker + network mode)
 - [ ] `.env` root: `UID`/`GID` asli, password kuat, `HRIS_PORT` dipilih (cek tidak bentrok)
 - [ ] `src/.env`: `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL` https, `SESSION_SECURE_COOKIE=true`, SMTP nyata
-- [ ] `composer install --no-dev`, `key:generate`
+- [ ] `composer install --no-dev`, `npm ci && npm run build`, `key:generate`
 - [ ] Route baru ditambahkan ke tunnel Cloudflare yang sudah ada (bukan tunnel baru)
 - [ ] Migrasi + seed **RoleSeeder & LeaveTypeSeeder saja** (bukan `DemoDataSeeder`)
 - [ ] Akun HR/Administrator pertama dibuat manual, 2FA aktif

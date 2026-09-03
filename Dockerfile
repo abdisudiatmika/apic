@@ -6,6 +6,13 @@ FROM composer:2 AS composer
 # ---------- Stage 2: PHP-FPM runtime ----------
 FROM php:8.4-fpm-alpine AS app
 
+# nodejs/npm stay installed permanently (not a build-only stage) because
+# ./src is bind-mounted over /var/www/html at runtime (see docker-compose.yml) —
+# there is no "bake compiled assets into the image" step that would survive that
+# mount, so `npm run build` has to be run against the live container after it's
+# up (docker compose exec app npm run build / scripts/update-production.sh),
+# the same way composer/artisan commands already are.
+#
 # Runtime shared libraries stay installed permanently; the matching "-dev" headers
 # and build toolchain are added as a virtual group and removed after compiling the
 # extensions, so the compiled .so files still have their runtime deps at container
@@ -23,6 +30,8 @@ RUN apk add --no-cache \
         oniguruma \
         zip \
         unzip \
+        nodejs \
+        npm \
     && apk add --no-cache --virtual .build-deps \
         freetype-dev \
         icu-dev \

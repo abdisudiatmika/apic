@@ -1,0 +1,13 @@
+@import '/vendor/filament/filament/resources/css/theme.css';
+
+/*
+ * Filament's own shipped CSS (public/css/filament/filament/app.css) only
+ * contains the Tailwind classes Filament's own package views use — any raw
+ * utility class written directly in our app's custom Filament pages (e.g.
+ * resources/views/filament/pages/reports.blade.php) never gets compiled
+ * unless it's scanned here. Without this custom theme, those classes are
+ * silently no-ops in the browser (this is what happened to the Laporan &
+ * Analitik page before this file existed).
+ */
+@source '../../../app/Filament/**/*.php';
+@source '../../../resources/views/filament/**/*.blade.php';
