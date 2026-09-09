@@ -173,11 +173,14 @@ Sudah dikerjakan sejak awal (lihat plan untuk detail lengkap):
 - Audit log aktif dari awal untuk semua model utama
 
 **Selesai di Fase 4 (hardening) — diuji end-to-end lewat browser, bukan cuma ditulis:**
-- 2FA (TOTP) wajib untuk panel admin (HR/Administrator/Direksi) — `AppAuthentication`
-  bawaan Filament, secret & recovery codes tersimpan terenkripsi di kolom
-  `users.app_authentication_secret`/`app_authentication_recovery_codes`
-  (cast `encrypted`/`encrypted:array`, bukan plaintext). Diuji: enrollment penuh
-  (scan secret → hitung OTP → aktifkan), lalu re-login memang meminta kode.
+- ~~2FA (TOTP) wajib untuk panel admin~~ — **dicabut di Fase 8** atas permintaan
+  pengguna (dianggap terlalu merepotkan untuk pemakaian sehari-hari). Login
+  panel admin sekarang email+password saja, sama seperti panel portal. Kolom
+  `users.app_authentication_secret`/`app_authentication_recovery_codes` masih
+  ada di skema DB (tidak dihapus — data lama tidak dipakai lagi tapi tidak
+  perlu migration destruktif), tapi model `User` tidak lagi
+  mengimplementasikan `HasAppAuthentication`/`HasAppAuthenticationRecovery`
+  dan `AdminPanelProvider` tidak lagi memanggil `->multiFactorAuthentication()`.
 - Security headers lengkap: X-Frame-Options, X-Content-Type-Options,
   Referrer-Policy, Permissions-Policy, dan **Content-Security-Policy** di
   `docker/nginx/default.conf`. `script-src` butuh `'unsafe-inline'` **dan**

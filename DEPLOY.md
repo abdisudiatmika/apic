@@ -207,10 +207,9 @@ docker compose exec app php artisan optimize
 - Buka `https://hris.namadomainanda.com/admin/login` dari browser — harus muncul
   halaman login (bukan error, bukan "502/1033" dari Cloudflare — kalau muncul
   berarti route di langkah 8 belum tersambung dengan benar ke port HRIS).
-- Login dengan akun dari langkah 10 → harus diarahkan ke setup 2FA wajib (lihat
-  `README.md` bagian Keamanan) → selesaikan enrollment dengan aplikasi authenticator
-  sungguhan (Google Authenticator/Authy), bukan cara manual seperti saat pengujian
-  lokal.
+- Login dengan akun dari langkah 10 → langsung masuk ke Dashboard (2FA dicabut
+  di Fase 8, lihat `README.md` bagian Keamanan — bukan lagi diarahkan ke setup
+  authenticator).
 - `docker compose ps` — pastikan semua container `running`.
 - `curl -sI https://hris.namadomainanda.com/admin/login | grep -i strict-transport`
   — pastikan header HSTS muncul.
@@ -282,6 +281,6 @@ yang benar.
 - [ ] `composer install --no-dev`, `npm ci && npm run build`, `key:generate`
 - [ ] Route baru ditambahkan ke tunnel Cloudflare yang sudah ada (bukan tunnel baru)
 - [ ] Migrasi + seed **RoleSeeder & LeaveTypeSeeder saja** (bukan `DemoDataSeeder`)
-- [ ] Akun HR/Administrator pertama dibuat manual, 2FA aktif
+- [ ] Akun HR/Administrator pertama dibuat manual
 - [ ] `security-check.sh` bersih
 - [ ] Backup terjadwal lewat cron
